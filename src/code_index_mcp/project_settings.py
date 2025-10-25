@@ -632,17 +632,20 @@ class ProjectSettings:
     def _find_project_root(self, start_path):
         """
         Find existing parent index or determine where to create new one.
+        Automatically cleans up redundant child indexes when parent index exists.
 
         Strategy:
         1. Walk up directory tree from start_path
         2. Check each parent for existing .code_indexer directory
         3. If found, use that location (prefer highest-level index)
-        4. If not found after reaching filesystem root, use start_path
+        4. Clean up any child indexes below the parent level
+        5. If not found after reaching filesystem root, use start_path
 
         This creates a hierarchical index system where:
         - Subdirectories automatically use parent indexes when available
         - New indexes only created when no parent index exists
         - Always prefer the highest-level (closest to root) index
+        - Redundant child indexes are automatically removed
 
         Args:
             start_path: The starting path to search from
@@ -654,7 +657,11 @@ class ProjectSettings:
             return start_path
 
         current = os.path.abspath(start_path)
+        start_abs = os.path.abspath(start_path)
         index_dir_name = f".{SETTINGS_DIR}"  # ".code_indexer"
+
+        # Track directories we've traversed (for cleanup later)
+        traversed_dirs = []
 
         # Walk up the directory tree
         while True:
@@ -663,8 +670,16 @@ class ProjectSettings:
 
             if os.path.exists(index_path) and os.path.isdir(index_path):
                 # Found existing index at this level
-                logger.info(f"Found existing index at: {current}")
+                logger.info(f"Found existing parent index at: {current}")
+
+                # Clean up any child indexes below this parent level
+                if current != start_abs:
+                    self._cleanup_child_indexes(start_abs, current, index_dir_name)
+
                 return current
+
+            # Track this directory for potential cleanup
+            traversed_dirs.append(current)
 
             # Move to parent directory
             parent = os.path.dirname(current)
@@ -677,6 +692,43 @@ class ProjectSettings:
                 return start_path
 
             current = parent
+
+    def _cleanup_child_indexes(self, start_path, parent_index_path, index_dir_name):
+        """
+        Clean up redundant .code_indexer directories in child paths.
+
+        When a parent index is found, remove any .code_indexer directories
+        between start_path and parent_index_path to avoid duplication.
+
+        Args:
+            start_path: The original search starting path
+            parent_index_path: The parent directory containing the index to use
+            index_dir_name: Name of the index directory (e.g., ".code_indexer")
+        """
+        try:
+            current = os.path.abspath(start_path)
+            parent_abs = os.path.abspath(parent_index_path)
+
+            # Walk from start_path up to (but not including) parent_index_path
+            while current != parent_abs:
+                child_index = os.path.join(current, index_dir_name)
+
+                if os.path.exists(child_index) and os.path.isdir(child_index):
+                    try:
+                        # Remove the redundant child index
+                        shutil.rmtree(child_index)
+                        logger.info(f"Cleaned up redundant child index at: {current}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up child index at {current}: {e}")
+
+                # Move to parent
+                parent = os.path.dirname(current)
+                if parent == current:  # Reached filesystem root
+                    break
+                current = parent
+
+        except Exception as e:
+            logger.warning(f"Error during child index cleanup: {e}")
 
     def refresh_available_strategies(self):
         """
