@@ -191,11 +191,18 @@ def unified_search(
             query='fluid'
         )
 
-        # Files search - find files by name pattern
+        # Files search - find files by name (auto-converts to glob)
         unified_search(
             mode='files',
             project_path='D:\\\\my-project',
-            query='*.py'
+            query='heat'  # Finds all files with "heat" in filename (auto: *heat*)
+        )
+
+        # Files search - explicit glob pattern
+        unified_search(
+            mode='files',
+            project_path='D:\\\\my-project',
+            query='*.py'  # Finds all Python files
         )
 
         # Summary mode - analyze a specific file
