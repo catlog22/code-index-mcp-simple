@@ -251,14 +251,17 @@ class ProjectSettings:
         self.available_strategies: list[SearchStrategy] = []
         self.refresh_available_strategies()
 
+        # Find project root to avoid creating multiple .code_indexer directories
+        self.project_root = self._find_project_root(base_path)
+
         # Initialize in-memory MCP Config (will be populated by migration)
         self._mcp_config: Dict[str, Any] = copy.deepcopy(DEFAULT_MCP_CONFIG)
 
-        # Store index in project directory by default (simpler and more intuitive)
+        # Store index in project root directory to avoid duplicates in subdirectories
         try:
-            if base_path and os.path.exists(base_path):
-                # Default: use .code_indexer subdirectory in project
-                temp_base_dir = os.path.join(base_path, f".{SETTINGS_DIR}")
+            if self.project_root and os.path.exists(self.project_root):
+                # Use .code_indexer subdirectory in project root
+                temp_base_dir = os.path.join(self.project_root, f".{SETTINGS_DIR}")
             else:
                 # Fallback: use system temp directory
                 system_temp = tempfile.gettempdir()
@@ -626,13 +629,59 @@ class ProjectSettings:
 
         return self.available_strategies[0] if self.available_strategies else None
 
+    def _find_project_root(self, start_path):
+        """
+        Find the project root directory by looking for markers like .git, .hg, etc.
+        This avoids creating multiple .code_indexer directories in subdirectories.
+
+        Args:
+            start_path: The starting path to search from
+
+        Returns:
+            str: Project root path, or start_path if no root found
+        """
+        if not start_path or not os.path.exists(start_path):
+            return start_path
+
+        current = os.path.abspath(start_path)
+
+        # Project root markers (in priority order)
+        root_markers = [
+            '.git',           # Git repository
+            '.hg',            # Mercurial repository
+            '.svn',           # SVN repository
+            'pyproject.toml', # Python project
+            'package.json',   # Node.js project
+            'Cargo.toml',     # Rust project
+            'go.mod',         # Go module
+            'pom.xml',        # Maven project
+            'build.gradle',   # Gradle project
+        ]
+
+        # Traverse up to find project root
+        while True:
+            # Check if any marker exists in current directory
+            for marker in root_markers:
+                if os.path.exists(os.path.join(current, marker)):
+                    return current
+
+            # Move to parent directory
+            parent = os.path.dirname(current)
+
+            # Stop if we've reached the filesystem root
+            if parent == current:
+                # No root marker found, use the original start_path
+                return start_path
+
+            current = parent
+
     def refresh_available_strategies(self):
         """
         Force a refresh of the available search tools list.
         """
-        
+
         self.available_strategies = _get_available_strategies()
-        
+
 
     def get_file_watcher_config(self) -> dict:
         """
