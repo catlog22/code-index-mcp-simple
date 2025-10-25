@@ -254,44 +254,22 @@ class ProjectSettings:
         # Initialize in-memory MCP Config (will be populated by migration)
         self._mcp_config: Dict[str, Any] = copy.deepcopy(DEFAULT_MCP_CONFIG)
 
-        # Ensure the base path of the temporary directory exists
+        # Store index in project directory by default (simpler and more intuitive)
         try:
-            # Get system temporary directory
-            system_temp = tempfile.gettempdir()
+            if base_path and os.path.exists(base_path):
+                # Default: use .code_indexer subdirectory in project
+                temp_base_dir = os.path.join(base_path, f".{SETTINGS_DIR}")
+            else:
+                # Fallback: use system temp directory
+                system_temp = tempfile.gettempdir()
+                temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
 
-            # Check if the system temporary directory exists and is writable
-            if not os.path.exists(system_temp):
-                # Try using project directory as fallback if available
-                if base_path and os.path.exists(base_path):
-                    system_temp = base_path
-                else:
-                    # Use user's home directory as last resort
-                    system_temp = os.path.expanduser("~")
-
-            if not os.access(system_temp, os.W_OK):
-                # Try using project directory as fallback if available
-                if base_path and os.path.exists(base_path) and os.access(base_path, os.W_OK):
-                    system_temp = base_path
-                else:
-                    # Use user's home directory as last resort
-                    system_temp = os.path.expanduser("~")
-
-            # Create code_indexer directory
-            temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
-
+            # Create the directory if it doesn't exist
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
-            else:
-                pass
         except Exception:
-            # If unable to create temporary directory, use .code_indexer in project directory if available
-            if base_path and os.path.exists(base_path):
-                temp_base_dir = os.path.join(base_path, ".code_indexer")
-                
-            else:
-                # Use home directory as last resort
-                temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-                
+            # Last resort fallback: use home directory
+            temp_base_dir = os.path.join(os.path.expanduser("~"), f".{SETTINGS_DIR}")
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
 

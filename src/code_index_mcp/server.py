@@ -13,7 +13,7 @@ import sys
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, List
+from typing import AsyncIterator, Dict, Any, List, Optional
 
 # Third-party imports
 from mcp.server.fastmcp import FastMCP, Context
@@ -131,104 +131,124 @@ def get_file_content(file_path: str) -> str:
 
 # ----- TOOLS -----
 
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def set_project_path(
-    path: str,
-    ctx: Context,
-    auto_index: bool = True,
-    build_deep: bool = True
-) -> str:
-    """
-    Set the base project path and automatically build indexes.
-
-    This is the primary setup command that prepares your project for searching.
-    By default, it builds both shallow and deep indexes, making unified_search
-    immediately available for all modes (content, files, summary).
-
-    Args:
-        path: Absolute path to the project directory
-        auto_index: Auto-build shallow index for file discovery (default: True)
-        build_deep: Auto-build deep index for code analysis (default: True)
-
-    Returns:
-        Status message with indexing information
-
-    Example:
-        # Basic usage (recommended) - builds everything automatically
-        set_project_path("D:\\my-project")
-
-        # Large project - skip deep index to save time
-        set_project_path("D:\\large-project", build_deep=False)
-
-        # Manual control - no auto-indexing
-        set_project_path("D:\\project", auto_index=False, build_deep=False)
-    """
-    # Initialize project
-    result = ProjectManagementService(ctx).initialize_project(path)
-
-    # Auto-build shallow index if requested
-    if auto_index:
-        try:
-            IndexManagementService(ctx).refresh_index()
-            result += "\n✅ Auto-indexed files (ready for content/files search)"
-        except Exception as e:
-            result += f"\n⚠️ Warning: Shallow index failed: {e}"
-
-    # Auto-build deep index if requested
-    if build_deep:
-        try:
-            IndexManagementService(ctx).rebuild_deep_index()
-            result += "\n✅ Deep index built (ready for summary mode)"
-        except Exception as e:
-            result += f"\n⚠️ Warning: Deep index failed: {e}"
-            result += "\n💡 You can manually run build_deep_index() later"
-
-    if not auto_index and not build_deep:
-        result += "\n💡 Remember to run refresh_index() and build_deep_index() before searching"
-
-    return result
+# Removed set_project_path - functionality merged into unified_search
+# Users can now set project path directly in unified_search with the project_path parameter
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
 def unified_search(
     mode: str,
+    project_path: str,
     ctx: Context,
-    pattern: str = None,
+    pattern: Optional[str] = None,
     case_sensitive: bool = True,
     context_lines: int = 0,
-    file_pattern: str = None,
+    file_pattern: Optional[str] = None,
     fuzzy: bool = False,
-    regex: bool = None,
-    max_line_length: int = None,
-    file_path: str = None
+    regex: Optional[bool] = None,
+    max_line_length: Optional[int] = None,
+    file_path: Optional[str] = None,
+    auto_index: bool = True,
+    build_deep: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Unified search interface supporting multiple search modes.
 
-    This tool provides a single entry point for all search operations,
-    routing to the appropriate service based on the mode parameter.
+    This is the ONE TOOL you need! It can set project path, build indexes,
+    and perform searches - all in a single call for maximum convenience.
 
     Args:
         mode: Search mode - one of:
-            - 'content': Search code content with regex/fuzzy matching
-            - 'files': Find files by pattern
-            - 'summary': Get file structure analysis
-        pattern: Search pattern (required for content/files modes)
+            - 'content': Search code content (requires: pattern)
+            - 'files': Find files by name (requires: pattern)
+            - 'summary': Analyze file structure (requires: file_path)
+        project_path: **REQUIRED** - Absolute path to the project directory.
+            Automatically initializes the project and builds indexes before searching.
+            This means you can do everything in ONE call!
+        pattern: Search pattern (REQUIRED for 'content' and 'files' modes)
         case_sensitive: Whether search is case-sensitive (default: True)
         context_lines: Number of context lines to show (default: 0)
         file_pattern: Glob pattern to filter files (e.g., "*.py")
         fuzzy: Enable fuzzy/partial matching (default: False)
         regex: Enable regex pattern matching (default: None for auto-detect)
         max_line_length: Maximum length of lines in results (default: None)
-        file_path: File path for summary mode (required for summary mode)
+        file_path: Relative path to file for analysis (REQUIRED for 'summary' mode)
+            Example: "src/main.py" or "lib/utils.js"
+        auto_index: Auto-build shallow index when project_path is provided (default: True)
+        build_deep: Control deep index building (default: None for auto-detection)
+            - None (default): Auto-build only for mode='summary'
+            - True: Always build deep index
+            - False: Never build deep index
 
     Returns:
-        Search results in mode-appropriate format
+        Search results in mode-appropriate format, with optional setup status
 
     Raises:
         ValueError: If mode is invalid or required parameters are missing
+
+    Examples:
+        # Content search - find code containing pattern
+        unified_search(
+            mode='content',
+            project_path='D:\\\\my-project',
+            pattern='fluid'
+        )
+
+        # Files search - find files by name pattern
+        unified_search(
+            mode='files',
+            project_path='D:\\\\my-project',
+            pattern='*.py'
+        )
+
+        # Summary mode - analyze a specific file
+        unified_search(
+            mode='summary',
+            project_path='D:\\\\my-project',
+            file_path='src/main.py'
+        )
     """
+    # Initialize project (project_path is now required)
+    try:
+        # Initialize project
+        result = ProjectManagementService(ctx).initialize_project(project_path)
+        setup_status = {"project_initialization": result}
+
+        # Auto-build shallow index if requested
+        if auto_index:
+            try:
+                IndexManagementService(ctx).rebuild_index()
+                setup_status["shallow_index"] = "✅ Auto-indexed files"
+            except Exception as e:
+                setup_status["shallow_index"] = f"⚠️ Warning: {e}"
+
+        # Smart deep index building based on mode
+        # Auto-detect if build_deep is None
+        if build_deep is None:
+            # Auto mode: only build for summary
+            should_build = (mode == 'summary')
+        else:
+            # User explicitly set build_deep
+            should_build = build_deep
+
+        if should_build:
+            try:
+                IndexManagementService(ctx).rebuild_deep_index()
+                reason = "required for summary mode" if mode == 'summary' else "user requested"
+                setup_status["deep_index"] = f"✅ Deep index built ({reason})"
+            except Exception as e:
+                setup_status["deep_index"] = f"⚠️ Warning: {e}"
+        else:
+            # Not building deep index
+            if mode == 'summary':
+                # Warn if summary mode but user explicitly disabled deep index
+                setup_status["deep_index_warning"] = "⚠️ Summary mode needs deep index, but build_deep=False"
+            else:
+                # Normal: skip for content/files modes
+                setup_status["deep_index"] = f"⏭️ Skipped (not needed for '{mode}' mode)"
+    except Exception as e:
+        raise ValueError(f"Project initialization failed: {e}") from e
+
     # Create SearchContext from parameters
     try:
         search_ctx = SearchContext(
@@ -245,11 +265,12 @@ def unified_search(
     except ValueError as e:
         raise ValueError(f"Invalid search parameters: {e}") from e
 
-    # Validate mode-specific required parameters
+    # Validate mode-specific required parameters and execute search
+    search_results = None
     if mode == 'content':
         if not pattern:
             raise ValueError("pattern is required for content mode")
-        return SearchService(ctx).search_code(
+        search_results = SearchService(ctx).search_code(
             pattern=search_ctx.pattern,
             case_sensitive=search_ctx.case_sensitive,
             context_lines=search_ctx.context_lines,
@@ -262,79 +283,48 @@ def unified_search(
         if not pattern:
             raise ValueError("pattern is required for files mode")
         files = FileDiscoveryService(ctx).find_files(search_ctx.pattern)
-        return {"files": files, "total_count": len(files)}
+        search_results = {"files": files, "total_count": len(files)}
     elif mode == 'summary':
         if not file_path:
-            raise ValueError("file_path is required for summary mode")
-        return CodeIntelligenceService(ctx).analyze_file(search_ctx.file_path)
+            raise ValueError(
+                "file_path is required for summary mode. "
+                "Please provide the relative path to a file (e.g., 'src/main.py'). "
+                "Use mode='files' with pattern='*.py' to discover available files first."
+            )
+        search_results = CodeIntelligenceService(ctx).analyze_file(search_ctx.file_path)
     else:
         # This should never happen due to SearchContext validation, but defensive
         raise ValueError(f"Unsupported mode: {mode}")
 
+    # Always return combined setup status with search results
+    return {
+        "setup": setup_status,
+        "search": search_results
+    }
 
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def refresh_index(ctx: Context) -> str:
-    """
-    [OPTIONAL] Manually refresh the shallow file index.
 
-    This command is typically NOT needed because:
-    - set_project_path() auto-builds the index by default
-    - File watcher auto-refreshes when files change
+# Removed refresh_index and build_deep_index - functionality merged into unified_search
+# Users can control indexing behavior with auto_index and build_deep parameters in unified_search
 
-    Use this ONLY when:
-    - You used set_project_path(auto_index=False)
-    - File watcher is disabled or malfunctioning
-    - After large git operations (checkout, merge, pull)
-    - Troubleshooting outdated file discovery results
-
-    Note: Most users never need to call this manually
-    - Performs full project re-indexing for complete accuracy
-    - Use when you suspect the index is stale after file system changes
-    - **Call this after programmatic file modifications if file watcher seems unresponsive**
-    - Complements the automatic file watcher system
-
-    Returns:
-        Success message with total file count
-    """
-    return IndexManagementService(ctx).rebuild_index()
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def build_deep_index(ctx: Context) -> str:
-    """
-    [OPTIONAL] Manually build the deep symbol index.
-
-    This command is typically NOT needed because:
-    - set_project_path() auto-builds the deep index by default
-
-    Use this ONLY when:
-    - You used set_project_path(build_deep=False)
-    - You want to rebuild after significant code changes
-    - Previous deep index build failed and you want to retry
-
-    Deep index enables:
-    - unified_search(mode='summary') for file structure analysis
-    - Function/class/import extraction
-    - Complexity metrics
-
-    Note: Most users never need to call this manually
-    """
-    return IndexManagementService(ctx).rebuild_deep_index()
-
-# Removed 7 non-essential management tools to simplify the API surface:
-# - get_settings_info: Debugging/inspection tool
-# - create_temp_directory: Manual setup tool (handled by lifecycle)
-# - check_temp_directory: Debugging tool
-# - clear_settings: Destructive management tool
-# - refresh_search_tools: Manual override (auto-detected on startup)
-# - get_file_watcher_status: Observability tool
-# - configure_file_watcher: Management tool (default config sufficient)
+# API Simplification Summary:
+# - Removed 10 tools total, keeping only unified_search
+# - unified_search now handles: project setup, indexing, and all search modes
+# - Single-tool workflow: unified_search(mode, pattern, project_path)
 #
-# Core search workflow retained:
-# 1. set_project_path -> Initialize context
-# 2. refresh_index / build_deep_index -> Build data artifacts
-# 3. unified_search -> Execute searches
+# Previously removed tools:
+# - set_project_path (merged into unified_search via project_path parameter)
+# - refresh_index (merged into unified_search via auto_index parameter)
+# - build_deep_index (merged into unified_search via build_deep parameter)
+# - get_settings_info (debugging tool)
+# - create_temp_directory (lifecycle managed)
+# - check_temp_directory (debugging tool)
+# - clear_settings (destructive operation)
+# - refresh_search_tools (auto-detected)
+# - get_file_watcher_status (observability)
+# - configure_file_watcher (default config sufficient)
+#
+# Simplified workflow: ONE TOOL for everything!
+# unified_search(mode='content', pattern='search', project_path='D:\\project')
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
