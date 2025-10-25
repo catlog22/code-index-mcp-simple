@@ -22,7 +22,7 @@ from mcp.server.fastmcp import FastMCP, Context
 from .project_settings import ProjectSettings, migrate_legacy_config
 from .models import SearchContext
 from .services import (
-    SearchService, FileService, FileWatcherService
+    SearchService, FileService
 )
 from .services.file_discovery_service import FileDiscoveryService
 from .services.project_management_service import ProjectManagementService
@@ -58,7 +58,6 @@ class CodeIndexerContext:
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
-    file_watcher_service: FileWatcherService = None
 
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
@@ -90,20 +89,18 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         logging.error(f"Config migration error: {e}, using defaults")
         # settings already has default config initialized
 
-    # Initialize context - file watcher will be initialized later when project path is set
+    # Initialize context
     context = CodeIndexerContext(
         base_path=base_path,
-        settings=settings,
-        file_watcher_service=None
+        settings=settings
     )
 
     try:
         # Provide context to the server
         yield context
     finally:
-        # Stop file watcher if it was started
-        if context.file_watcher_service:
-            context.file_watcher_service.stop_monitoring()
+        # Cleanup (no file watcher to stop anymore)
+        pass
 
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])

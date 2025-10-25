@@ -23,26 +23,22 @@ from .project_management_service import ProjectManagementService
 from .index_management_service import IndexManagementService
 from .file_discovery_service import FileDiscoveryService
 from .code_intelligence_service import CodeIntelligenceService
-from .system_management_service import SystemManagementService
 from .search_service import SearchService  # Already follows clean architecture
 from .settings_service import SettingsService
 
 # Simple Services
 from .file_service import FileService  # Simple file reading for resources
-from .file_watcher_service import FileWatcherService  # Low-level service, still needed
 
 __all__ = [
     # New Architecture
     'BaseService',
     'ProjectManagementService',
-    'IndexManagementService', 
+    'IndexManagementService',
     'FileDiscoveryService',
     'CodeIntelligenceService',
-    'SystemManagementService',
     'SearchService',
     'SettingsService',
-    
+
     # Simple Services
     'FileService',  # Simple file reading for resources
-    'FileWatcherService'  # Keep as low-level service
 ]

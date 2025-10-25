@@ -131,10 +131,6 @@ DEFAULT_MCP_CONFIG = {
         "include_patterns": [],
         "file_pattern": None
     },
-    "file_watcher": {
-        "enabled": False,
-        "debounce_seconds": 6.0
-    },
     "_migration": {
         "completed": False,
         "timestamp": None,

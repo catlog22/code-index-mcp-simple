@@ -23,9 +23,6 @@ dependencies = [
     "msgpack>=1.0.0",
 ]
 
-[project.optional-dependencies]
-watcher = ["watchdog>=3.0.0"]
-
 [project.urls]
 Homepage = "https://github.com/catlog22/code-index-mcp-simple"
 "Bug Tracker" = "https://github.com/catlog22/code-index-mcp-simple/issues"

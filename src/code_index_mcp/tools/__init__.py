@@ -8,12 +8,10 @@ business layer to achieve business goals.
 
 from .filesystem import FileMatchingTool, FileSystemTool
 from .config import ProjectConfigTool, SettingsTool
-from .monitoring import FileWatcherTool
 
 __all__ = [
     'FileMatchingTool',
     'FileSystemTool',
     'ProjectConfigTool',
-    'SettingsTool',
-    'FileWatcherTool'
+    'SettingsTool'
 ]

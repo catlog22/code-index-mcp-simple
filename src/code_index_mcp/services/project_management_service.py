@@ -24,7 +24,6 @@ class ProjectInitializationResult:
     file_count: int
     index_source: str  # 'loaded_existing' or 'built_new'
     search_capabilities: str
-    monitoring_status: str
     message: str
 
 
@@ -43,9 +42,6 @@ class ProjectManagementService(BaseService):
         self._index_manager = get_layered_index_manager()
         from ..tools.config import ProjectConfigTool
         self._config_tool = ProjectConfigTool()
-        # Import FileWatcherTool locally to avoid circular import
-        from ..tools.monitoring import FileWatcherTool
-        self._watcher_tool = FileWatcherTool(ctx)
 
 
     @contextmanager
@@ -118,13 +114,10 @@ class ProjectManagementService(BaseService):
         # Business step 3.1: Store index manager in context for other services
         self.helper.update_index_manager(self._index_manager)
 
-        # Business step 4: Setup file monitoring
-        monitoring_result = self._setup_file_monitoring(normalized_path)
-
         # Business step 4: Update system state
         self._update_project_state(normalized_path, index_result['file_count'])
 
-        # Business step 6: Get search capabilities info
+        # Business step 5: Get search capabilities info
         search_info = self._get_search_capabilities_info()
 
         return ProjectInitializationResult(
@@ -132,16 +125,12 @@ class ProjectManagementService(BaseService):
             file_count=index_result['file_count'],
             index_source=index_result['source'],
             search_capabilities=search_info,
-            monitoring_status=monitoring_result,
             message=f"Project initialized: {normalized_path}"
         )
 
     def _cleanup_existing_project(self) -> None:
         """Business logic to cleanup existing project state."""
         with self._noop_operation():
-            # Stop existing file monitoring
-            self._watcher_tool.stop_existing_watcher()
-
             # Clear existing index cache
             self.helper.clear_index_cache()
 
@@ -232,89 +221,6 @@ class ProjectManagementService(BaseService):
         }
 
 
-    def _setup_file_monitoring(self, project_path: str) -> str:
-        """
-        Business logic to setup file monitoring for the project.
-
-        Args:
-            project_path: Project path to monitor
-
-        Returns:
-            String describing monitoring setup result
-        """
-        # Check if file watcher is enabled in MCP Config
-        from ..services.file_watcher_service import WATCHDOG_AVAILABLE
-
-        file_watcher_config = self.settings.get_file_watcher_config()
-        file_watcher_enabled = file_watcher_config.get('enabled', False)
-
-        if not file_watcher_enabled:
-            logger.info("FileWatcher disabled in config, using on-demand index refresh")
-            return "monitoring_disabled"
-
-        if not WATCHDOG_AVAILABLE:
-            logger.error("FileWatcher enabled but watchdog not installed. Install with: pip install code-index-mcp[watcher]")
-            logger.info("Falling back to on-demand index refresh")
-            return "monitoring_unavailable"
-
-        try:
-            # Create rebuild callback that uses the layered index manager
-            def rebuild_callback():
-                logger.info("File watcher triggered rebuild callback")
-                try:
-                    logger.debug(f"Starting shallow index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild using layered index manager
-                    try:
-                        if not self._index_manager.set_project_path(project_path):
-                            logger.warning("Index manager set_project_path failed")
-                            return False
-
-                        # Rebuild shallow index
-                        file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=True)
-                        if file_list:
-                            logger.info(f"File watcher shallow rebuild completed successfully - files {len(file_list)}")
-                            return True
-                        else:
-                            logger.warning("File watcher shallow rebuild failed")
-                            return False
-                    except Exception as e:
-                        import traceback
-                        logger.error(f"File watcher shallow rebuild failed: {e}")
-                        logger.error(f"Traceback: {traceback.format_exc()}")
-                        return False
-                except Exception as e:
-                    import traceback
-                    logger.error(f"File watcher rebuild failed: {e}")
-                    logger.error(f"Traceback: {traceback.format_exc()}")
-                    return False
-
-            # Start monitoring using watcher tool
-            logger.info("FileWatcher enabled - starting file system monitoring")
-            success = self._watcher_tool.start_monitoring(project_path, rebuild_callback)
-
-            if success:
-                # Store watcher in context for later access
-                self._watcher_tool.store_in_context()
-                logger.info("FileWatcher started successfully (auto-refresh enabled)")
-                return "monitoring_active"
-            else:
-                self._watcher_tool.record_error("Failed to start file monitoring")
-                logger.warning("FileWatcher failed to start, falling back to on-demand refresh")
-                return "monitoring_failed"
-
-        except ImportError as e:
-            error_msg = f"FileWatcher enabled but watchdog not installed: {e}"
-            logger.error(error_msg)
-            logger.info("Install with: pip install code-index-mcp[watcher]")
-            logger.info("Falling back to on-demand index refresh")
-            self._watcher_tool.record_error(error_msg)
-            return "monitoring_unavailable"
-        except Exception as e:
-            error_msg = f"File monitoring setup failed: {e}"
-            self._watcher_tool.record_error(error_msg)
-            logger.warning("FileWatcher setup failed, falling back to on-demand refresh")
-            return "monitoring_error"
-
     def _update_project_state(self, project_path: str, file_count: int) -> None:
         """Business logic to update system state after project initialization."""
 
@@ -355,9 +261,6 @@ class ProjectManagementService(BaseService):
             message = (f"Project path set to: {result.project_path}. "
                       f"Indexed {result.file_count} files. "
                       f"{result.search_capabilities}.")
-
-        if result.monitoring_status != "monitoring_active":
-            message += " (File monitoring unavailable - use manual refresh)"
 
         return message
 
