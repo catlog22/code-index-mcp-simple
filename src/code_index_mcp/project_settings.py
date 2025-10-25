@@ -631,46 +631,49 @@ class ProjectSettings:
 
     def _find_project_root(self, start_path):
         """
-        Find the project root directory by looking for markers like .git, .hg, etc.
-        This avoids creating multiple .code_indexer directories in subdirectories.
+        Find existing parent index or determine where to create new one.
+
+        Strategy:
+        1. Walk up directory tree from start_path
+        2. Check each parent for existing .code_indexer directory
+        3. If found, use that location (prefer highest-level index)
+        4. If not found after reaching filesystem root, use start_path
+
+        This creates a hierarchical index system where:
+        - Subdirectories automatically use parent indexes when available
+        - New indexes only created when no parent index exists
+        - Always prefer the highest-level (closest to root) index
 
         Args:
             start_path: The starting path to search from
 
         Returns:
-            str: Project root path, or start_path if no root found
+            str: Directory that should contain the .code_indexer folder
         """
         if not start_path or not os.path.exists(start_path):
             return start_path
 
         current = os.path.abspath(start_path)
+        index_dir_name = f".{SETTINGS_DIR}"  # ".code_indexer"
 
-        # Project root markers (in priority order)
-        root_markers = [
-            '.git',           # Git repository
-            '.hg',            # Mercurial repository
-            '.svn',           # SVN repository
-            'pyproject.toml', # Python project
-            'package.json',   # Node.js project
-            'Cargo.toml',     # Rust project
-            'go.mod',         # Go module
-            'pom.xml',        # Maven project
-            'build.gradle',   # Gradle project
-        ]
-
-        # Traverse up to find project root
+        # Walk up the directory tree
         while True:
-            # Check if any marker exists in current directory
-            for marker in root_markers:
-                if os.path.exists(os.path.join(current, marker)):
-                    return current
+            # Check if .code_indexer exists in current directory
+            index_path = os.path.join(current, index_dir_name)
+
+            if os.path.exists(index_path) and os.path.isdir(index_path):
+                # Found existing index at this level
+                logger.info(f"Found existing index at: {current}")
+                return current
 
             # Move to parent directory
             parent = os.path.dirname(current)
 
             # Stop if we've reached the filesystem root
             if parent == current:
-                # No root marker found, use the original start_path
+                # No existing index found in any parent
+                # Use the original start_path to create new index
+                logger.info(f"No parent index found, will create at: {start_path}")
                 return start_path
 
             current = parent
