@@ -442,13 +442,25 @@ class LayeredIndexManager:
 
                 # Apply pattern matching
                 import re
+                import os
                 norm_pattern = pattern.replace('\\\\', '/').replace('\\', '/')
-                regex = self._compile_glob_regex(norm_pattern)
 
                 if norm_pattern == "*":
                     return file_list
 
-                return [f for f in file_list if regex.match(f) is not None]
+                # Smart matching strategy:
+                # - If pattern contains '/', match against full path
+                # - If pattern contains no '/', match against basename only
+                match_basename_only = '/' not in norm_pattern
+
+                regex = self._compile_glob_regex(norm_pattern)
+
+                if match_basename_only:
+                    # Match against basename for simple filename patterns
+                    return [f for f in file_list if regex.match(os.path.basename(f)) is not None]
+                else:
+                    # Match against full path for patterns with path separators
+                    return [f for f in file_list if regex.match(f) is not None]
 
             except Exception as e:
                 logger.error(f"Error finding files: {e}")
