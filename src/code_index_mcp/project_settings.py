@@ -257,21 +257,17 @@ class ProjectSettings:
         # Initialize in-memory MCP Config (will be populated by migration)
         self._mcp_config: Dict[str, Any] = copy.deepcopy(DEFAULT_MCP_CONFIG)
 
-        # Store index in project root directory to avoid duplicates in subdirectories
+        # Store index in system temporary directory (cleaner, doesn't pollute project)
         try:
-            if self.project_root and os.path.exists(self.project_root):
-                # Use .code_indexer subdirectory in project root
-                temp_base_dir = os.path.join(self.project_root, f".{SETTINGS_DIR}")
-            else:
-                # Fallback: use system temp directory
-                system_temp = tempfile.gettempdir()
-                temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
+            # Use system temporary directory
+            system_temp = tempfile.gettempdir()
+            temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
 
             # Create the directory if it doesn't exist
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
         except Exception:
-            # Last resort fallback: use home directory
+            # Fallback: use home directory
             temp_base_dir = os.path.join(os.path.expanduser("~"), f".{SETTINGS_DIR}")
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
@@ -631,104 +627,66 @@ class ProjectSettings:
 
     def _find_project_root(self, start_path):
         """
-        Find existing parent index or determine where to create new one.
-        Automatically cleans up redundant child indexes when parent index exists.
+        Find the project root directory to determine consistent hash for indexing.
+
+        Since indexes are stored in system temp directory with project path hash,
+        we need to find the "logical" project root so that subdirectories share
+        the same index as their parent project.
 
         Strategy:
         1. Walk up directory tree from start_path
-        2. Check each parent for existing .code_indexer directory
-        3. If found, use that location (prefer highest-level index)
-        4. Clean up any child indexes below the parent level
-        5. If not found after reaching filesystem root, use start_path
+        2. Look for project markers (.git, package.json, etc.)
+        3. If found, that's the project root (consistent hash location)
+        4. If not found, use start_path itself
 
-        This creates a hierarchical index system where:
-        - Subdirectories automatically use parent indexes when available
-        - New indexes only created when no parent index exists
-        - Always prefer the highest-level (closest to root) index
-        - Redundant child indexes are automatically removed
+        This ensures:
+        - All subdirectories of a project share the same index
+        - Different projects get separate indexes
+        - Indexes stored in temp dir (not polluting projects)
 
         Args:
             start_path: The starting path to search from
 
         Returns:
-            str: Directory that should contain the .code_indexer folder
+            str: Project root directory for hash calculation
         """
         if not start_path or not os.path.exists(start_path):
             return start_path
 
         current = os.path.abspath(start_path)
-        start_abs = os.path.abspath(start_path)
-        index_dir_name = f".{SETTINGS_DIR}"  # ".code_indexer"
 
-        # Track directories we've traversed (for cleanup later)
-        traversed_dirs = []
+        # Project root markers (in priority order)
+        root_markers = [
+            '.git',           # Git repository
+            '.hg',            # Mercurial repository
+            '.svn',           # SVN repository
+            'pyproject.toml', # Python project
+            'package.json',   # Node.js project
+            'Cargo.toml',     # Rust project
+            'go.mod',         # Go module
+            'pom.xml',        # Maven project
+            'build.gradle',   # Gradle project
+            'CMakeLists.txt', # CMake project
+        ]
 
         # Walk up the directory tree
         while True:
-            # Check if .code_indexer exists in current directory
-            index_path = os.path.join(current, index_dir_name)
-
-            if os.path.exists(index_path) and os.path.isdir(index_path):
-                # Found existing index at this level
-                logger.info(f"Found existing parent index at: {current}")
-
-                # Clean up any child indexes below this parent level
-                if current != start_abs:
-                    self._cleanup_child_indexes(start_abs, current, index_dir_name)
-
-                return current
-
-            # Track this directory for potential cleanup
-            traversed_dirs.append(current)
+            # Check if any marker exists in current directory
+            for marker in root_markers:
+                if os.path.exists(os.path.join(current, marker)):
+                    logger.info(f"Found project root at: {current} (marker: {marker})")
+                    return current
 
             # Move to parent directory
             parent = os.path.dirname(current)
 
             # Stop if we've reached the filesystem root
             if parent == current:
-                # No existing index found in any parent
-                # Use the original start_path to create new index
-                logger.info(f"No parent index found, will create at: {start_path}")
+                # No project marker found, use the original start_path
+                logger.info(f"No project markers found, using: {start_path}")
                 return start_path
 
             current = parent
-
-    def _cleanup_child_indexes(self, start_path, parent_index_path, index_dir_name):
-        """
-        Clean up redundant .code_indexer directories in child paths.
-
-        When a parent index is found, remove any .code_indexer directories
-        between start_path and parent_index_path to avoid duplication.
-
-        Args:
-            start_path: The original search starting path
-            parent_index_path: The parent directory containing the index to use
-            index_dir_name: Name of the index directory (e.g., ".code_indexer")
-        """
-        try:
-            current = os.path.abspath(start_path)
-            parent_abs = os.path.abspath(parent_index_path)
-
-            # Walk from start_path up to (but not including) parent_index_path
-            while current != parent_abs:
-                child_index = os.path.join(current, index_dir_name)
-
-                if os.path.exists(child_index) and os.path.isdir(child_index):
-                    try:
-                        # Remove the redundant child index
-                        shutil.rmtree(child_index)
-                        logger.info(f"Cleaned up redundant child index at: {current}")
-                    except Exception as e:
-                        logger.warning(f"Failed to clean up child index at {current}: {e}")
-
-                # Move to parent
-                parent = os.path.dirname(current)
-                if parent == current:  # Reached filesystem root
-                    break
-                current = parent
-
-        except Exception as e:
-            logger.warning(f"Error during child index cleanup: {e}")
 
     def refresh_available_strategies(self):
         """
