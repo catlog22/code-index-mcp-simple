@@ -44,9 +44,36 @@ Code Index MCP Simple 是一个 [Model Context Protocol](https://modelcontextpro
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (推荐)
 
-#### 方法 1：使用 uvx (推荐)
+#### 方法 1：直接从 GitHub 安装（推荐）
 
-启动任何 MCP 兼容应用程序最简单的方法：
+无需克隆，直接从 GitHub 安装和运行：
+
+**添加到您的 MCP 配置中** (例如，`claude_desktop_config.json`)：
+```json
+{
+  "mcpServers": {
+    "code-index-simple": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/catlog22/code-index-mcp-simple.git",
+        "code-index-mcp-simple"
+      ]
+    }
+  }
+}
+```
+
+**重启您的应用程序** 并开始使用：
+```
+查找项目中所有的 TypeScript 文件
+搜索 "authentication" 相关函数
+分析 App.tsx 主文件
+```
+
+#### 方法 2：本地克隆
+
+用于离线使用或开发：
 
 1.  **克隆仓库：**
     ```bash
@@ -55,6 +82,8 @@ Code Index MCP Simple 是一个 [Model Context Protocol](https://modelcontextpro
     ```
 
 2.  **添加到您的 MCP 配置中** (例如，`claude_desktop_config.json`)：
+
+    **Windows:**
     ```json
     {
       "mcpServers": {
@@ -62,7 +91,24 @@ Code Index MCP Simple 是一个 [Model Context Protocol](https://modelcontextpro
           "command": "uv",
           "args": [
             "--directory",
-            "G:\\github_lib\\code-index-mcp-simple",
+            "C:\\path\\to\\code-index-mcp-simple",
+            "run",
+            "code-index-mcp-simple"
+          ]
+        }
+      }
+    }
+    ```
+
+    **macOS/Linux:**
+    ```json
+    {
+      "mcpServers": {
+        "code-index-simple": {
+          "command": "uv",
+          "args": [
+            "--directory",
+            "/path/to/code-index-mcp-simple",
             "run",
             "code-index-mcp-simple"
           ]
@@ -73,15 +119,7 @@ Code Index MCP Simple 是一个 [Model Context Protocol](https://modelcontextpro
 
 3.  **重启您的应用程序** – 更改将生效。
 
-4.  **开始使用** (为您的 AI 助手提供的示例提示)：
-    ```
-    Set the project path to G:\my-project
-    Find all TypeScript files in this project
-    Search for "authentication" functions
-    Analyze the main App.tsx file
-    ```
-
-#### 方法 2：本地开发
+#### 方法 3：本地开发
 
 用于贡献或本地开发：
 

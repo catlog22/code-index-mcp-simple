@@ -44,9 +44,36 @@ Code Index MCP Simple is a [Model Context Protocol](https://modelcontextprotocol
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended)
 
-#### Method 1: Using uvx (Recommended)
+#### Method 1: Direct from GitHub (Recommended)
 
-The easiest way to get started with any MCP-compatible application:
+Install and run directly from GitHub without cloning:
+
+**Add to your MCP configuration** (e.g., `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "code-index-simple": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/catlog22/code-index-mcp-simple.git",
+        "code-index-mcp-simple"
+      ]
+    }
+  }
+}
+```
+
+**Restart your application** and start using:
+```
+Find all TypeScript files in this project
+Search for "authentication" functions
+Analyze the main App.tsx file
+```
+
+#### Method 2: Local Clone
+
+For offline use or development:
 
 1.  **Clone the repository:**
     ```bash
@@ -55,6 +82,8 @@ The easiest way to get started with any MCP-compatible application:
     ```
 
 2.  **Add to your MCP configuration** (e.g., `claude_desktop_config.json`):
+
+    **Windows:**
     ```json
     {
       "mcpServers": {
@@ -62,7 +91,24 @@ The easiest way to get started with any MCP-compatible application:
           "command": "uv",
           "args": [
             "--directory",
-            "G:\\github_lib\\code-index-mcp-simple",
+            "C:\\path\\to\\code-index-mcp-simple",
+            "run",
+            "code-index-mcp-simple"
+          ]
+        }
+      }
+    }
+    ```
+
+    **macOS/Linux:**
+    ```json
+    {
+      "mcpServers": {
+        "code-index-simple": {
+          "command": "uv",
+          "args": [
+            "--directory",
+            "/path/to/code-index-mcp-simple",
             "run",
             "code-index-mcp-simple"
           ]
@@ -73,15 +119,7 @@ The easiest way to get started with any MCP-compatible application:
 
 3.  **Restart your application** – Changes will take effect.
 
-4.  **Start using** (example prompts for your AI assistant):
-    ```
-    Set the project path to G:\my-project
-    Find all TypeScript files in this project
-    Search for "authentication" functions
-    Analyze the main App.tsx file
-    ```
-
-#### Method 2: Local Development
+#### Method 3: Local Development
 
 For contributing or local development:
 
