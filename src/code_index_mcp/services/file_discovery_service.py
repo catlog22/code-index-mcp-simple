@@ -39,7 +39,10 @@ class FileDiscoveryService(BaseService):
         Find files matching the given pattern using JSON indexing.
 
         Args:
-            pattern: Glob pattern to search for (e.g., "*.py", "test_*.js")
+            pattern: Search pattern - can be:
+                - Glob pattern: "*.py", "test_*.js", "src/**/*.ts"
+                - Simple text: "heat" (auto-converted to "*heat*")
+                - Wildcards will be added automatically if pattern doesn't contain glob chars
             max_results: Maximum number of results to return (None for no limit)
 
         Returns:
@@ -55,13 +58,24 @@ class FileDiscoveryService(BaseService):
         # Shallow index contains file list which is all we need for pattern matching
         self._ensure_index_fresh(target_path=None, shallow=True)
 
+        # Smart pattern conversion: if pattern doesn't contain glob chars, add wildcards
+        glob_chars = ['*', '?', '[', ']']
+        has_glob = any(char in pattern for char in glob_chars)
+
+        if not has_glob:
+            # Simple text search - wrap with wildcards for substring matching
+            search_pattern = f"*{pattern}*"
+        else:
+            # User provided glob pattern - use as is
+            search_pattern = pattern
+
         # Get files from JSON index
-        files = self._index_manager.find_files(pattern)
-        
+        files = self._index_manager.find_files(search_pattern)
+
         # Apply max_results limit if specified
         if max_results and len(files) > max_results:
             files = files[:max_results]
-        
+
         return files
 
     def _validate_discovery_request(self, pattern: str) -> None:

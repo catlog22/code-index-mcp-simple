@@ -163,7 +163,10 @@ def unified_search(
             This means you can do everything in ONE call!
         query: Search query (REQUIRED for 'content' and 'files' modes)
             - For 'content' mode: Text or regex pattern to search in code
-            - For 'files' mode: File name pattern (glob) to match
+            - For 'files' mode: File name pattern - supports:
+                * Simple text: "heat" (finds files containing "heat" in name)
+                * Glob patterns: "*.py" (all Python files), "test_*" (files starting with test_)
+                * Auto-conversion: simple text without wildcards gets wrapped as "*text*"
         case_sensitive: Whether search is case-sensitive (default: True)
         context_lines: Number of context lines to show (default: 0)
         file_pattern: Glob pattern to filter files (e.g., "*.py")
