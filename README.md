@@ -196,14 +196,17 @@ npx @modelcontextprotocol/inspector uv run code-index-mcp-simple
 
 ## Available Tools / 可用工具
 
-### 🏗️ Project Management / 项目管理
+**English:** This is a simplified version with only essential search tools. Management and debugging tools have been removed for a cleaner API.
+
+**中文：** 这是简化版本，仅保留必要的搜索工具。管理和调试工具已被移除，提供更简洁的 API。
+
+### 🏗️ Project Setup / 项目设置
 
 | Tool / 工具 | Description / 描述 |
 |-------------|-------------------|
 | **`set_project_path`** | Initialize indexing for a project directory / 为项目目录初始化索引 |
 | **`refresh_index`** | Rebuild the shallow file index after file changes / 文件更改后重建浅层索引 |
 | **`build_deep_index`** | Generate the full symbol index used by deep analysis / 生成深度分析使用的完整符号索引 |
-| **`get_settings_info`** | View current project configuration and status / 查看当前项目配置和状态 |
 
 ### 🔍 Search & Discovery / 搜索与发现
 
@@ -267,21 +270,29 @@ unified_search(mode='summary', file_path='src/main.py')
 > **Note / 注意:** For v2.x users, see [MIGRATION.md](MIGRATION.md) for upgrading guide.
 > v2.x 用户请参见 [MIGRATION.md](MIGRATION.md) 获取升级指南。
 
-### 🔄 Monitoring & Auto-refresh / 监控与自动刷新
+---
 
-| Tool / 工具 | Description / 描述 |
-|-------------|-------------------|
-| **`get_file_watcher_status`** | Check file watcher status and configuration / 检查文件监控状态和配置 |
-| **`configure_file_watcher`** | Enable/disable auto-refresh and configure settings / 启用/禁用自动刷新并配置设置 |
+## Simplified API / 简化的 API
 
-### 🛠️ System & Maintenance / 系统与维护
+**English:**
 
-| Tool / 工具 | Description / 描述 |
-|-------------|-------------------|
-| **`create_temp_directory`** | Set up storage directory for index data / 设置索引数据的存储目录 |
-| **`check_temp_directory`** | Verify index storage location and permissions / 验证索引存储位置和权限 |
-| **`clear_settings`** | Reset all cached data and configurations / 重置所有缓存数据和配置 |
-| **`refresh_search_tools`** | Re-detect available search tools (ugrep, ripgrep, etc.) / 重新检测可用的搜索工具 |
+This simplified version focuses exclusively on code search functionality. The following management and debugging tools have been removed:
+
+- ❌ `get_settings_info` - Use `set_project_path` output instead
+- ❌ `create_temp_directory` / `check_temp_directory` - Handled automatically
+- ❌ `clear_settings` - Not needed for normal operation
+- ❌ `refresh_search_tools` - Auto-detected on startup
+- ❌ `get_file_watcher_status` / `configure_file_watcher` - Auto-configured
+
+**中文：**
+
+此简化版本专注于代码搜索功能。以下管理和调试工具已被移除：
+
+- ❌ `get_settings_info` - 使用 `set_project_path` 的输出替代
+- ❌ `create_temp_directory` / `check_temp_directory` - 自动处理
+- ❌ `clear_settings` - 正常操作无需使用
+- ❌ `refresh_search_tools` - 启动时自动检测
+- ❌ `get_file_watcher_status` / `configure_file_watcher` - 自动配置
 
 ---
 

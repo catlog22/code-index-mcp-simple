@@ -22,14 +22,12 @@ from mcp.server.fastmcp import FastMCP, Context
 from .project_settings import ProjectSettings, migrate_legacy_config
 from .models import SearchContext
 from .services import (
-    SearchService, FileService, SettingsService, FileWatcherService
+    SearchService, FileService, FileWatcherService
 )
-from .services.settings_service import manage_temp_directory
 from .services.file_discovery_service import FileDiscoveryService
 from .services.project_management_service import ProjectManagementService
 from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
-from .services.system_management_service import SystemManagementService
 from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
 )
@@ -257,55 +255,19 @@ def build_deep_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_deep_index()
 
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_settings_info(ctx: Context) -> Dict[str, Any]:
-    """Get information about the project settings."""
-    return SettingsService(ctx).get_settings_info()
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def create_temp_directory() -> Dict[str, Any]:
-    """Create the temporary directory used for storing index data."""
-    return manage_temp_directory('create')
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def check_temp_directory() -> Dict[str, Any]:
-    """Check the temporary directory used for storing index data."""
-    return manage_temp_directory('check')
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def clear_settings(ctx: Context) -> str:
-    """Clear all settings and cached data."""
-    return SettingsService(ctx).clear_all_settings()
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def refresh_search_tools(ctx: Context) -> str:
-    """
-    Manually re-detect the available command-line search tools on the system.
-    This is useful if you have installed a new tool (like ripgrep) after starting the server.
-    """
-    return SearchService(ctx).refresh_search_tools()
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
-    """Get file watcher service status and statistics."""
-    return SystemManagementService(ctx).get_file_watcher_status()
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
-def configure_file_watcher(
-    ctx: Context,
-    enabled: bool = None,
-    debounce_seconds: float = None,
-    additional_exclude_patterns: list = None
-) -> str:
-    """Configure file watcher service settings."""
-    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
+# Removed 7 non-essential management tools to simplify the API surface:
+# - get_settings_info: Debugging/inspection tool
+# - create_temp_directory: Manual setup tool (handled by lifecycle)
+# - check_temp_directory: Debugging tool
+# - clear_settings: Destructive management tool
+# - refresh_search_tools: Manual override (auto-detected on startup)
+# - get_file_watcher_status: Observability tool
+# - configure_file_watcher: Management tool (default config sufficient)
+#
+# Core search workflow retained:
+# 1. set_project_path -> Initialize context
+# 2. refresh_index / build_deep_index -> Build data artifacts
+# 3. unified_search -> Execute searches
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
