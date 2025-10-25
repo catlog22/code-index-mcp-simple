@@ -37,9 +37,12 @@ class SearchService(BaseService):
         # Use shallow=True for content search (only needs file list for filtering)
         self._ensure_index_fresh(target_path=None, shallow=True)
 
+        # Only auto-detect regex if not explicitly set
         if regex is None:
             regex = is_safe_regex_pattern(pattern)
 
+        # Note: We don't validate regex patterns as "unsafe" anymore
+        # The ripgrep strategy will fall back to literal search if pattern doesn't look like regex
         error = ValidationHelper.validate_search_pattern(pattern, regex)
         if error:
             raise ValueError(error)

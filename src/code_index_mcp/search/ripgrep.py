@@ -50,12 +50,15 @@ class RipgrepStrategy(SearchStrategy):
 
         # Prepare search pattern
         search_pattern = pattern
-        
+
         if regex:
-            # Use regex mode - check for safety first
-            if not is_safe_regex_pattern(pattern):
-                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
-            # Don't add --fixed-strings, use regex mode
+            # Check if pattern actually looks like a regex
+            if is_safe_regex_pattern(pattern):
+                # Use regex mode - pattern looks like safe regex
+                pass  # Don't add --fixed-strings
+            else:
+                # Pattern doesn't look like regex, treat as literal
+                cmd.append('--fixed-strings')
         elif fuzzy:
             # Use word boundary pattern for partial matching
             search_pattern = create_word_boundary_pattern(pattern)

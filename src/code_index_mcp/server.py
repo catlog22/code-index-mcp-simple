@@ -140,7 +140,7 @@ def unified_search(
     mode: str,
     project_path: str,
     ctx: Context,
-    pattern: Optional[str] = None,
+    query: Optional[str] = None,
     case_sensitive: bool = True,
     context_lines: int = 0,
     file_pattern: Optional[str] = None,
@@ -148,8 +148,7 @@ def unified_search(
     regex: Optional[bool] = None,
     max_line_length: Optional[int] = None,
     file_path: Optional[str] = None,
-    auto_index: bool = True,
-    build_deep: Optional[bool] = None
+    auto_index: bool = True
 ) -> Dict[str, Any]:
     """
     Unified search interface supporting multiple search modes.
@@ -159,13 +158,15 @@ def unified_search(
 
     Args:
         mode: Search mode - one of:
-            - 'content': Search code content (requires: pattern)
-            - 'files': Find files by name (requires: pattern)
+            - 'content': Search code content (requires: query)
+            - 'files': Find files by name (requires: query)
             - 'summary': Analyze file structure (requires: file_path)
         project_path: **REQUIRED** - Absolute path to the project directory.
             Automatically initializes the project and builds indexes before searching.
             This means you can do everything in ONE call!
-        pattern: Search pattern (REQUIRED for 'content' and 'files' modes)
+        query: Search query (REQUIRED for 'content' and 'files' modes)
+            - For 'content' mode: Text or regex pattern to search in code
+            - For 'files' mode: File name pattern (glob) to match
         case_sensitive: Whether search is case-sensitive (default: True)
         context_lines: Number of context lines to show (default: 0)
         file_pattern: Glob pattern to filter files (e.g., "*.py")
@@ -175,10 +176,6 @@ def unified_search(
         file_path: Relative path to file for analysis (REQUIRED for 'summary' mode)
             Example: "src/main.py" or "lib/utils.js"
         auto_index: Auto-build shallow index when project_path is provided (default: True)
-        build_deep: Control deep index building (default: None for auto-detection)
-            - None (default): Auto-build only for mode='summary'
-            - True: Always build deep index
-            - False: Never build deep index
 
     Returns:
         Search results in mode-appropriate format, with optional setup status
@@ -187,18 +184,18 @@ def unified_search(
         ValueError: If mode is invalid or required parameters are missing
 
     Examples:
-        # Content search - find code containing pattern
+        # Content search - find code containing text
         unified_search(
             mode='content',
             project_path='D:\\\\my-project',
-            pattern='fluid'
+            query='fluid'
         )
 
         # Files search - find files by name pattern
         unified_search(
             mode='files',
             project_path='D:\\\\my-project',
-            pattern='*.py'
+            query='*.py'
         )
 
         # Summary mode - analyze a specific file
@@ -222,30 +219,16 @@ def unified_search(
             except Exception as e:
                 setup_status["shallow_index"] = f"⚠️ Warning: {e}"
 
-        # Smart deep index building based on mode
-        # Auto-detect if build_deep is None
-        if build_deep is None:
-            # Auto mode: only build for summary
-            should_build = (mode == 'summary')
-        else:
-            # User explicitly set build_deep
-            should_build = build_deep
-
-        if should_build:
+        # Smart deep index building: only for summary mode
+        if mode == 'summary':
             try:
                 IndexManagementService(ctx).rebuild_deep_index()
-                reason = "required for summary mode" if mode == 'summary' else "user requested"
-                setup_status["deep_index"] = f"✅ Deep index built ({reason})"
+                setup_status["deep_index"] = "✅ Deep index built (required for summary mode)"
             except Exception as e:
                 setup_status["deep_index"] = f"⚠️ Warning: {e}"
         else:
-            # Not building deep index
-            if mode == 'summary':
-                # Warn if summary mode but user explicitly disabled deep index
-                setup_status["deep_index_warning"] = "⚠️ Summary mode needs deep index, but build_deep=False"
-            else:
-                # Normal: skip for content/files modes
-                setup_status["deep_index"] = f"⏭️ Skipped (not needed for '{mode}' mode)"
+            # Skip deep index for content/files modes (not needed)
+            setup_status["deep_index"] = f"⏭️ Skipped (not needed for '{mode}' mode)"
     except Exception as e:
         raise ValueError(f"Project initialization failed: {e}") from e
 
@@ -253,7 +236,7 @@ def unified_search(
     try:
         search_ctx = SearchContext(
             mode=mode,
-            pattern=pattern,
+            pattern=query,  # Use query instead of pattern
             case_sensitive=case_sensitive,
             context_lines=context_lines,
             file_pattern=file_pattern,
@@ -268,8 +251,8 @@ def unified_search(
     # Validate mode-specific required parameters and execute search
     search_results = None
     if mode == 'content':
-        if not pattern:
-            raise ValueError("pattern is required for content mode")
+        if not query:
+            raise ValueError("query is required for content mode")
         search_results = SearchService(ctx).search_code(
             pattern=search_ctx.pattern,
             case_sensitive=search_ctx.case_sensitive,
@@ -280,8 +263,8 @@ def unified_search(
             max_line_length=search_ctx.max_line_length
         )
     elif mode == 'files':
-        if not pattern:
-            raise ValueError("pattern is required for files mode")
+        if not query:
+            raise ValueError("query is required for files mode")
         files = FileDiscoveryService(ctx).find_files(search_ctx.pattern)
         search_results = {"files": files, "total_count": len(files)}
     elif mode == 'summary':
@@ -289,7 +272,7 @@ def unified_search(
             raise ValueError(
                 "file_path is required for summary mode. "
                 "Please provide the relative path to a file (e.g., 'src/main.py'). "
-                "Use mode='files' with pattern='*.py' to discover available files first."
+                "Use mode='files' with query='*.py' to discover available files first."
             )
         search_results = CodeIntelligenceService(ctx).analyze_file(search_ctx.file_path)
     else:
@@ -304,17 +287,18 @@ def unified_search(
 
 
 # Removed refresh_index and build_deep_index - functionality merged into unified_search
-# Users can control indexing behavior with auto_index and build_deep parameters in unified_search
+# Users can control indexing behavior with auto_index parameter in unified_search
+# Deep index is automatically built only for summary mode
 
 # API Simplification Summary:
 # - Removed 10 tools total, keeping only unified_search
 # - unified_search now handles: project setup, indexing, and all search modes
-# - Single-tool workflow: unified_search(mode, pattern, project_path)
+# - Single-tool workflow: unified_search(mode, query, project_path)
 #
 # Previously removed tools:
 # - set_project_path (merged into unified_search via project_path parameter)
 # - refresh_index (merged into unified_search via auto_index parameter)
-# - build_deep_index (merged into unified_search via build_deep parameter)
+# - build_deep_index (automatic for summary mode, removed as separate tool)
 # - get_settings_info (debugging tool)
 # - create_temp_directory (lifecycle managed)
 # - check_temp_directory (debugging tool)
@@ -324,7 +308,7 @@ def unified_search(
 # - configure_file_watcher (default config sufficient)
 #
 # Simplified workflow: ONE TOOL for everything!
-# unified_search(mode='content', pattern='search', project_path='D:\\project')
+# unified_search(mode='content', query='search', project_path='D:\\project')
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
