@@ -133,9 +133,61 @@ def get_file_content(file_path: str) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
-def set_project_path(path: str, ctx: Context) -> str:
-    """Set the base project path for indexing."""
-    return ProjectManagementService(ctx).initialize_project(path)
+def set_project_path(
+    path: str,
+    ctx: Context,
+    auto_index: bool = True,
+    build_deep: bool = True
+) -> str:
+    """
+    Set the base project path and automatically build indexes.
+
+    This is the primary setup command that prepares your project for searching.
+    By default, it builds both shallow and deep indexes, making unified_search
+    immediately available for all modes (content, files, summary).
+
+    Args:
+        path: Absolute path to the project directory
+        auto_index: Auto-build shallow index for file discovery (default: True)
+        build_deep: Auto-build deep index for code analysis (default: True)
+
+    Returns:
+        Status message with indexing information
+
+    Example:
+        # Basic usage (recommended) - builds everything automatically
+        set_project_path("D:\\my-project")
+
+        # Large project - skip deep index to save time
+        set_project_path("D:\\large-project", build_deep=False)
+
+        # Manual control - no auto-indexing
+        set_project_path("D:\\project", auto_index=False, build_deep=False)
+    """
+    # Initialize project
+    result = ProjectManagementService(ctx).initialize_project(path)
+
+    # Auto-build shallow index if requested
+    if auto_index:
+        try:
+            IndexManagementService(ctx).refresh_index()
+            result += "\n✅ Auto-indexed files (ready for content/files search)"
+        except Exception as e:
+            result += f"\n⚠️ Warning: Shallow index failed: {e}"
+
+    # Auto-build deep index if requested
+    if build_deep:
+        try:
+            IndexManagementService(ctx).rebuild_deep_index()
+            result += "\n✅ Deep index built (ready for summary mode)"
+        except Exception as e:
+            result += f"\n⚠️ Warning: Deep index failed: {e}"
+            result += "\n💡 You can manually run build_deep_index() later"
+
+    if not auto_index and not build_deep:
+        result += "\n💡 Remember to run refresh_index() and build_deep_index() before searching"
+
+    return result
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
@@ -224,17 +276,19 @@ def unified_search(
 @handle_mcp_tool_errors(return_type='str')
 def refresh_index(ctx: Context) -> str:
     """
-    Manually refresh the project index when files have been added/removed/moved.
+    [OPTIONAL] Manually refresh the shallow file index.
 
-    Use when:
-    - File watcher is disabled or unavailable
-    - After large-scale operations (git checkout, merge, pull) that change many files
-    - When you want immediate index rebuild without waiting for file watcher debounce
-    - When find_files results seem incomplete or outdated
-    - For troubleshooting suspected index synchronization issues
+    This command is typically NOT needed because:
+    - set_project_path() auto-builds the index by default
+    - File watcher auto-refreshes when files change
 
-    Important notes for LLMs:
-    - Always available as backup when file watcher is not working
+    Use this ONLY when:
+    - You used set_project_path(auto_index=False)
+    - File watcher is disabled or malfunctioning
+    - After large git operations (checkout, merge, pull)
+    - Troubleshooting outdated file discovery results
+
+    Note: Most users never need to call this manually
     - Performs full project re-indexing for complete accuracy
     - Use when you suspect the index is stale after file system changes
     - **Call this after programmatic file modifications if file watcher seems unresponsive**
@@ -249,9 +303,22 @@ def refresh_index(ctx: Context) -> str:
 @handle_mcp_tool_errors(return_type='str')
 def build_deep_index(ctx: Context) -> str:
     """
-    Build the deep index (full symbol extraction) for the current project.
+    [OPTIONAL] Manually build the deep symbol index.
 
-    This performs a complete re-index and loads it into memory.
+    This command is typically NOT needed because:
+    - set_project_path() auto-builds the deep index by default
+
+    Use this ONLY when:
+    - You used set_project_path(build_deep=False)
+    - You want to rebuild after significant code changes
+    - Previous deep index build failed and you want to retry
+
+    Deep index enables:
+    - unified_search(mode='summary') for file structure analysis
+    - Function/class/import extraction
+    - Complexity metrics
+
+    Note: Most users never need to call this manually
     """
     return IndexManagementService(ctx).rebuild_deep_index()
 

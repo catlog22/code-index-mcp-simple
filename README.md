@@ -202,11 +202,15 @@ npx @modelcontextprotocol/inspector uv run code-index-mcp-simple
 
 ### 🏗️ Project Setup / 项目设置
 
-| Tool / 工具 | Description / 描述 |
-|-------------|-------------------|
-| **`set_project_path`** | Initialize indexing for a project directory / 为项目目录初始化索引 |
-| **`refresh_index`** | Rebuild the shallow file index after file changes / 文件更改后重建浅层索引 |
-| **`build_deep_index`** | Generate the full symbol index used by deep analysis / 生成深度分析使用的完整符号索引 |
+| Tool / 工具 | Required / 必需 | Description / 描述 |
+|-------------|-----------------|-------------------|
+| **`set_project_path`** | ✅ **Required** / 必需 | Initialize project and auto-build indexes / 初始化项目并自动构建索引 |
+| **`refresh_index`** | ❌ Optional / 可选 | Manually rebuild file index (auto-updated by default) / 手动重建文件索引（默认自动更新） |
+| **`build_deep_index`** | ❌ Optional / 可选 | Manually rebuild symbol index (auto-built by default) / 手动重建符号索引（默认自动构建） |
+
+**English:** `set_project_path` now automatically builds both indexes, so most users only need this one command!
+
+**中文：** `set_project_path` 现在自动构建两个索引，大多数用户只需要这一个命令！
 
 ### 🔍 Search & Discovery / 搜索与发现
 
@@ -300,39 +304,49 @@ This simplified version focuses exclusively on code search functionality. The fo
 
 ### 🎯 Quick Start Workflow / 快速入门工作流
 
-**Step 1: Initialize Your Project / 步骤 1：初始化项目**
+**English:** Ultra-simple 2-step process!
 
-**English:** Set the project path to start indexing
+**中文：** 超简单的 2 步流程！
+
+#### Step 1: Set Project Path (Auto-indexes everything) / 步骤 1：设置项目路径（自动索引一切）
+
+**English:**
 ```
 Set the project path to G:\my-react-app
 ```
 
-**中文：** 设置项目路径以开始索引
+This single command:
+- ✅ Sets the project directory
+- ✅ Auto-builds file index (for `mode='content'` and `mode='files'`)
+- ✅ Auto-builds symbol index (for `mode='summary'`)
+- ✅ Makes `unified_search` immediately ready to use!
+
+**中文：**
 ```
 设置项目路径为 G:\my-react-app
 ```
 
-**Step 2: Explore Project Structure / 步骤 2：探索项目结构**
+这一个命令就：
+- ✅ 设置项目目录
+- ✅ 自动构建文件索引（用于 `mode='content'` 和 `mode='files'`）
+- ✅ 自动构建符号索引（用于 `mode='summary'`）
+- ✅ 让 `unified_search` 立即可用！
 
-**English:** Find files by pattern
-```
-Find all TypeScript component files in src/components
-```
+#### Step 2: Start Searching! / 步骤 2：开始搜索！
 
-**中文：** 按模式查找文件
-```
-查找 src/components 目录下所有 TypeScript 组件文件
-```
+**English:** No additional setup needed - search immediately!
 
-**Step 3: Analyze Key Files / 步骤 3：分析关键文件**
-
-**English:** Get detailed file analysis (run `build_deep_index` first if needed)
 ```
+Search for "authentication" in the codebase
+Find all TypeScript component files
 Give me a summary of src/api/userService.ts
 ```
 
-**中文：** 获取详细文件分析（如需要请先运行 `build_deep_index`）
+**中文：** 无需额外设置 - 立即搜索！
+
 ```
+在代码库中搜索 "authentication"
+查找所有 TypeScript 组件文件
 给我分析一下 src/api/userService.ts 文件
 ```
 
