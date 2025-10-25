@@ -19,7 +19,8 @@ from typing import AsyncIterator, Dict, Any, List
 from mcp.server.fastmcp import FastMCP, Context
 
 # Local imports
-from .project_settings import ProjectSettings
+from .project_settings import ProjectSettings, migrate_legacy_config
+from .models import SearchContext
 from .services import (
     SearchService, FileService, SettingsService, FileWatcherService
 )
@@ -70,6 +71,27 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     # Initialize settings manager with skip_load=True to skip loading files
     settings = ProjectSettings(base_path, skip_load=True)
 
+    # Perform configuration migration from legacy config.json to MCP Config
+    # This runs before any services are initialized to ensure config is ready
+    try:
+        if settings.settings_path:
+            migrated_config = migrate_legacy_config(settings.settings_path)
+            settings.set_mcp_config(migrated_config)
+
+            migration_source = migrated_config.get("_migration", {}).get("source", "unknown")
+            if migration_source == "legacy":
+                logging.info("Config migrated from legacy config.json")
+            elif migration_source == "default":
+                logging.info("Using default configuration (no legacy config found)")
+            elif migration_source == "partial":
+                logging.warning("Partial migration completed, some settings use defaults")
+            elif migration_source == "default_fallback":
+                logging.warning("Migration failed, using default configuration")
+    except Exception as e:
+        # Don't block server startup on migration failure
+        logging.error(f"Config migration error: {e}, using defaults")
+        # settings already has default config initialized
+
     # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
         base_path=base_path,
@@ -119,98 +141,86 @@ def set_project_path(path: str, ctx: Context) -> str:
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
-def search_code_advanced(
-    pattern: str,
+def unified_search(
+    mode: str,
     ctx: Context,
+    pattern: str = None,
     case_sensitive: bool = True,
     context_lines: int = 0,
     file_pattern: str = None,
     fuzzy: bool = False,
     regex: bool = None,
-    max_line_length: int = None
+    max_line_length: int = None,
+    file_path: str = None
 ) -> Dict[str, Any]:
     """
-    Search for a code pattern in the project using an advanced, fast tool.
+    Unified search interface supporting multiple search modes.
 
-    This tool automatically selects the best available command-line search tool
-    (like ugrep, ripgrep, ag, or grep) for maximum performance.
-
-    Args:
-        pattern: The search pattern. Can be literal text or regex (see regex parameter).
-        case_sensitive: Whether the search should be case-sensitive.
-        context_lines: Number of lines to show before and after the match.
-        file_pattern: A glob pattern to filter files to search in
-                     (e.g., "*.py", "*.js", "test_*.py").
-        max_line_length: Optional. Default None (no limit). Limits the length of lines when context_lines is used.
-                     All search tools now handle glob patterns consistently:
-                     - ugrep: Uses glob patterns (*.py, *.{js,ts})
-                     - ripgrep: Uses glob patterns (*.py, *.{js,ts})
-                     - ag (Silver Searcher): Automatically converts globs to regex patterns
-                     - grep: Basic glob pattern matching
-                     All common glob patterns like "*.py", "test_*.js", "src/*.ts" are supported.
-        fuzzy: If True, enables fuzzy/partial matching behavior varies by search tool:
-               - ugrep: Native fuzzy search with --fuzzy flag (true edit-distance fuzzy search)
-               - ripgrep, ag, grep, basic: Word boundary pattern matching (not true fuzzy search)
-               IMPORTANT: Only ugrep provides true fuzzy search. Other tools use word boundary
-               matching which allows partial matches at word boundaries.
-               For exact literal matches, set fuzzy=False (default and recommended).
-        regex: Controls regex pattern matching behavior:
-               - If True, enables regex pattern matching
-               - If False, forces literal string search
-               - If None (default), automatically detects regex patterns and enables regex for patterns like "ERROR|WARN"
-               The pattern will always be validated for safety to prevent ReDoS attacks.
-
-    Returns:
-        A dictionary containing the search results or an error message.
-
-    """
-    return SearchService(ctx).search_code(
-        pattern=pattern,
-        case_sensitive=case_sensitive,
-        context_lines=context_lines,
-        file_pattern=file_pattern,
-        fuzzy=fuzzy,
-        regex=regex,
-        max_line_length=max_line_length
-    )
-
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
-def find_files(pattern: str, ctx: Context) -> List[str]:
-    """
-    Find files matching a glob pattern using pre-built file index.
-
-    Use when:
-    - Looking for files by pattern (e.g., "*.py", "test_*.js")
-    - Searching by filename only (e.g., "README.md" finds all README files)
-    - Checking if specific files exist in the project
-    - Getting file lists for further analysis
-
-    Pattern matching:
-    - Supports both full path and filename-only matching
-    - Uses standard glob patterns (*, ?, [])
-    - Fast lookup using in-memory file index
-    - Uses forward slashes consistently across all platforms
+    This tool provides a single entry point for all search operations,
+    routing to the appropriate service based on the mode parameter.
 
     Args:
-        pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
+        mode: Search mode - one of:
+            - 'content': Search code content with regex/fuzzy matching
+            - 'files': Find files by pattern
+            - 'summary': Get file structure analysis
+        pattern: Search pattern (required for content/files modes)
+        case_sensitive: Whether search is case-sensitive (default: True)
+        context_lines: Number of context lines to show (default: 0)
+        file_pattern: Glob pattern to filter files (e.g., "*.py")
+        fuzzy: Enable fuzzy/partial matching (default: False)
+        regex: Enable regex pattern matching (default: None for auto-detect)
+        max_line_length: Maximum length of lines in results (default: None)
+        file_path: File path for summary mode (required for summary mode)
 
     Returns:
-        List of file paths matching the pattern
-    """
-    return FileDiscoveryService(ctx).find_files(pattern)
+        Search results in mode-appropriate format
 
-@mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
+    Raises:
+        ValueError: If mode is invalid or required parameters are missing
     """
-    Get a summary of a specific file, including:
-    - Line count
-    - Function/class definitions (for supported languages)
-    - Import statements
-    - Basic complexity metrics
-    """
-    return CodeIntelligenceService(ctx).analyze_file(file_path)
+    # Create SearchContext from parameters
+    try:
+        search_ctx = SearchContext(
+            mode=mode,
+            pattern=pattern,
+            case_sensitive=case_sensitive,
+            context_lines=context_lines,
+            file_pattern=file_pattern,
+            fuzzy=fuzzy,
+            regex=regex,
+            max_line_length=max_line_length,
+            file_path=file_path
+        )
+    except ValueError as e:
+        raise ValueError(f"Invalid search parameters: {e}") from e
+
+    # Validate mode-specific required parameters
+    if mode == 'content':
+        if not pattern:
+            raise ValueError("pattern is required for content mode")
+        return SearchService(ctx).search_code(
+            pattern=search_ctx.pattern,
+            case_sensitive=search_ctx.case_sensitive,
+            context_lines=search_ctx.context_lines,
+            file_pattern=search_ctx.file_pattern,
+            fuzzy=search_ctx.fuzzy,
+            regex=search_ctx.regex,
+            max_line_length=search_ctx.max_line_length
+        )
+    elif mode == 'files':
+        if not pattern:
+            raise ValueError("pattern is required for files mode")
+        files = FileDiscoveryService(ctx).find_files(search_ctx.pattern)
+        return {"files": files, "total_count": len(files)}
+    elif mode == 'summary':
+        if not file_path:
+            raise ValueError("file_path is required for summary mode")
+        return CodeIntelligenceService(ctx).analyze_file(search_ctx.file_path)
+    else:
+        # This should never happen due to SearchContext validation, but defensive
+        raise ValueError(f"Unsupported mode: {mode}")
+
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')

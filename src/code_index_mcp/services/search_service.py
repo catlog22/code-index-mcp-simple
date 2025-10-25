@@ -33,6 +33,10 @@ class SearchService(BaseService):
         """Search for code patterns in the project."""
         self._require_project_setup()
 
+        # Auto-refresh: Ensure shallow index is fresh before search
+        # Use shallow=True for content search (only needs file list for filtering)
+        self._ensure_index_fresh(target_path=None, shallow=True)
+
         if regex is None:
             regex = is_safe_regex_pattern(pattern)
 

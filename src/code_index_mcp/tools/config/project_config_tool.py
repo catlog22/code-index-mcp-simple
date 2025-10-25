@@ -109,14 +109,15 @@ class ProjectConfigTool:
             raise RuntimeError("Settings not initialized")
 
         # Check if JSON index exists and is fresh
-        from ...indexing import get_index_manager
-        index_manager = get_index_manager()
-        
+        from ...indexing import get_layered_index_manager
+        index_manager = get_layered_index_manager()
+
         # Set project path if available
         if self._settings.base_path:
             index_manager.set_project_path(self._settings.base_path)
-            stats = index_manager.get_index_stats()
-            return stats.get('status') == 'loaded'
+            # Check if global index exists
+            index = index_manager.get_global_index(shallow=False, force_rebuild=False)
+            return index is not None
         
         return False
 

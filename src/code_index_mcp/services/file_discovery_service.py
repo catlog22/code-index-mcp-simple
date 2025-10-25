@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base_service import BaseService
-from ..indexing import get_shallow_index_manager
+from ..indexing import get_layered_index_manager
 
 
 @dataclass
@@ -32,7 +32,7 @@ class FileDiscoveryService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self._index_manager = get_shallow_index_manager()
+        self._index_manager = get_layered_index_manager()
 
     def find_files(self, pattern: str, max_results: Optional[int] = None) -> List[str]:
         """
@@ -50,6 +50,10 @@ class FileDiscoveryService(BaseService):
         """
         # Business validation
         self._validate_discovery_request(pattern)
+
+        # Auto-refresh: Ensure shallow index is fresh before file discovery
+        # Shallow index contains file list which is all we need for pattern matching
+        self._ensure_index_fresh(target_path=None, shallow=True)
 
         # Get files from JSON index
         files = self._index_manager.find_files(pattern)

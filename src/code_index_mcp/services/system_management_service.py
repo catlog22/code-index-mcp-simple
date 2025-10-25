@@ -231,7 +231,7 @@ class SystemManagementService(BaseService):
 
             # Fallback to default configuration
             return {
-                'enabled': True,
+                'enabled': False,
                 'debounce_seconds': 6.0,
                 'additional_exclude_patterns': [],
                 'note': 'Default configuration - project not fully initialized'
@@ -240,7 +240,7 @@ class SystemManagementService(BaseService):
         except Exception as e:
             return {
                 'error': f'Could not load configuration: {e}',
-                'enabled': True,
+                'enabled': False,
                 'debounce_seconds': 6.0
             }
 

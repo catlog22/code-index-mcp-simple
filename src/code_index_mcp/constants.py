@@ -7,6 +7,7 @@ SETTINGS_DIR = "code_indexer"
 CONFIG_FILE = "config.json"
 INDEX_FILE = "index.json"  # JSON index file (deep index)
 INDEX_FILE_SHALLOW = "index.shallow.json"  # Minimal shallow index (file list)
+SUBPATH_CACHE_DIR = "subpath_caches"  # Sub-path index cache directory
 
 # Supported file extensions for code analysis
 # This is the authoritative list used by both old and new indexing systems
@@ -80,39 +81,64 @@ FILTER_CONFIG = {
     "exclude_directories": {
         # Version control
         '.git', '.svn', '.hg', '.bzr',
-        
-        # Package managers & dependencies  
+
+        # Package managers & dependencies
         'node_modules', '__pycache__', '.venv', 'venv',
         'vendor', 'bower_components',
-        
+
         # Build outputs
         'dist', 'build', 'target', 'out', 'bin', 'obj',
-        
+
         # IDE & editors
         '.idea', '.vscode', '.vs', '.sublime-workspace',
-        
+
         # Testing & coverage
         '.pytest_cache', '.coverage', '.tox', '.nyc_output',
         'coverage', 'htmlcov',
-        
+
         # OS artifacts
         '.DS_Store', 'Thumbs.db', 'desktop.ini'
     },
-    
+
     "exclude_files": {
         # Temporary files
         '*.tmp', '*.temp', '*.swp', '*.swo',
-        
-        # Backup files  
+
+        # Backup files
         '*.bak', '*~', '*.orig',
-        
+
         # Log files
         '*.log',
-        
+
         # Lock files
         'package-lock.json', 'yarn.lock', 'Pipfile.lock'
     },
-    
+
     "supported_extensions": SUPPORTED_EXTENSIONS
+}
+
+# Default MCP Config schema
+DEFAULT_MCP_CONFIG = {
+    "search": {
+        "case_sensitive": True,
+        "context_lines": 0,
+        "max_line_length": None,
+        "fuzzy": False,
+        "regex": None
+    },
+    "filter": {
+        "exclude_patterns": list(FILTER_CONFIG["exclude_directories"]),
+        "include_patterns": [],
+        "file_pattern": None
+    },
+    "file_watcher": {
+        "enabled": False,
+        "debounce_seconds": 6.0
+    },
+    "_migration": {
+        "completed": False,
+        "timestamp": None,
+        "source": None
+    }
 }
 

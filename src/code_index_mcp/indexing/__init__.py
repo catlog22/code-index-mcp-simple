@@ -12,21 +12,16 @@ from .qualified_names import (
 
 # New JSON-based indexing system
 from .json_index_builder import JSONIndexBuilder, IndexMetadata
-from .json_index_manager import JSONIndexManager, get_index_manager
-from .shallow_index_manager import ShallowIndexManager, get_shallow_index_manager
-from .deep_index_manager import DeepIndexManager
+from .layered_index_manager import LayeredIndexManager, get_layered_index_manager
 from .models import SymbolInfo, FileInfo
 
 __all__ = [
     'generate_qualified_name',
     'normalize_file_path',
     'JSONIndexBuilder',
-    'JSONIndexManager',
-    'get_index_manager',
-    'ShallowIndexManager',
-    'get_shallow_index_manager',
-    'DeepIndexManager',
+    'LayeredIndexManager',
+    'get_layered_index_manager',
     'SymbolInfo',
-    'FileInfo', 
+    'FileInfo',
     'IndexMetadata'
 ]

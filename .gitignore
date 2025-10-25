@@ -38,7 +38,7 @@ Thumbs.db
 # Code Index MCP specific files
 .code_indexer/
 
-
+.workflow
 # Claude Code generated files
 CLAUDE.local.md
 .claude/

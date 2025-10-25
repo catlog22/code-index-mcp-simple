@@ -1,0 +1,8 @@
+{
+  "last_updated": "2024-01-15T10:30:00Z",
+  "file_watcher": {
+    "enabled": "not_a_boolean",
+    "debounce_seconds": "not_a_number"
+  },
+  "missing_brace":
+}

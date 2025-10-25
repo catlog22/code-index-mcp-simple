@@ -1,0 +1,17 @@
+{
+  "last_updated": "2024-01-15T10:30:00Z",
+  "file_watcher": {
+    "enabled": true,
+    "debounce_seconds": 2.0,
+    "exclude_patterns": ["*.log", "*.tmp"]
+  },
+  "search_tools": {
+    "preferred_tool": "ripgrep",
+    "available_tools": ["ripgrep", "ugrep", "grep"]
+  },
+  "search_defaults": {
+    "case_sensitive": false,
+    "context_lines": 3,
+    "max_line_length": 500
+  }
+}

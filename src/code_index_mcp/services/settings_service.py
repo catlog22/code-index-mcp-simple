@@ -13,7 +13,7 @@ from .base_service import BaseService
 from ..utils import ResponseFormatter
 from ..constants import SETTINGS_DIR
 from ..project_settings import ProjectSettings
-from ..indexing import get_index_manager
+from ..indexing import get_layered_index_manager
 
 
 def manage_temp_directory(action: str) -> Dict[str, Any]:
@@ -35,9 +35,9 @@ def manage_temp_directory(action: str) -> Dict[str, Any]:
     if action not in ['create', 'check']:
         raise ValueError(f"Invalid action: {action}. Must be 'create' or 'check'")
 
-    # Try to get the actual temp directory from index manager, fallback to default
+    # Try to get the actual temp directory from layered index manager, fallback to default
     try:
-        index_manager = get_index_manager()
+        index_manager = get_layered_index_manager()
         temp_dir = index_manager.temp_dir if index_manager.temp_dir else os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
     except:
         temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
@@ -124,9 +124,9 @@ class SettingsService(BaseService):
             Dictionary with settings directory, config, stats, and status information
         """
         temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
-        
-        # Get the actual index directory from the index manager
-        index_manager = get_index_manager()
+
+        # Get the actual index directory from the layered index manager
+        index_manager = get_layered_index_manager()
         actual_temp_dir = index_manager.temp_dir if index_manager.temp_dir else temp_dir
 
         # Check if base_path is set

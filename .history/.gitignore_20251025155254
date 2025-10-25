@@ -1,0 +1,51 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Code Index MCP specific files
+.code_indexer/
+
+
+# Claude Code generated files
+CLAUDE.local.md
+.claude/
+.claude_chat/
+claude_*
+COMMIT_MESSAGE.txt
+RELEASE_NOTE.txt
+
+.llm-context/
+AGENTS.md

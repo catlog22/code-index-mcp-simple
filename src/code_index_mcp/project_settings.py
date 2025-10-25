@@ -6,16 +6,16 @@ for the Code Index MCP server.
 """
 import os
 import json
- 
- 
+import shutil
+import logging
 import tempfile
 import hashlib
- 
+from typing import Dict, Any
 from datetime import datetime
 
 
 from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
+    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE, DEFAULT_MCP_CONFIG
 )
 from .search.base import SearchStrategy
 from .search.ugrep import UgrepStrategy
@@ -34,6 +34,9 @@ SEARCH_STRATEGY_CLASSES = [
     BasicSearchStrategy,
 ]
 
+# Logger for this module
+logger = logging.getLogger(__name__)
+
 
 def _get_available_strategies() -> list[SearchStrategy]:
     """
@@ -51,6 +54,187 @@ def _get_available_strategies() -> list[SearchStrategy]:
     return available
 
 
+def migrate_legacy_config(settings_path: str) -> Dict[str, Any]:
+    """
+    Migrate legacy config.json to new MCP Config format.
+
+    This function reads the legacy config.json file, transforms it to the new
+    MCP Config schema, backs up the original file, and returns the migrated
+    configuration.
+
+    Args:
+        settings_path: Path to the settings directory containing config.json
+
+    Returns:
+        Dict containing the migrated configuration or default config
+
+    Migration strategy:
+    - Idempotent: Safe to run multiple times (checks migration marker)
+    - Automatic backup: Creates config.json.backup before migration
+    - Fallback: Returns defaults if legacy config missing or invalid
+    - Error handling: Logs errors and returns defaults on failure
+    """
+    import copy
+
+    # Deep copy defaults to avoid mutations
+    mcp_config = copy.deepcopy(DEFAULT_MCP_CONFIG)
+    migration_status = "default"
+
+    config_file_path = os.path.join(settings_path, CONFIG_FILE)
+    backup_path = config_file_path + ".backup"
+
+    # Check if already migrated by looking for migration marker in a separate file
+    migration_marker_path = os.path.join(settings_path, ".migration_complete")
+    if os.path.exists(migration_marker_path):
+        try:
+            with open(migration_marker_path, 'r', encoding='utf-8') as f:
+                marker_data = json.load(f)
+            logger.info(f"Config already migrated on {marker_data.get('timestamp', 'unknown')}")
+            # Return the migrated config (already set as default above)
+            mcp_config["_migration"]["completed"] = True
+            mcp_config["_migration"]["timestamp"] = marker_data.get('timestamp')
+            mcp_config["_migration"]["source"] = marker_data.get('source', 'legacy')
+            return mcp_config
+        except Exception as e:
+            logger.warning(f"Failed to read migration marker: {e}")
+            # Continue with migration attempt
+
+    # Check if legacy config.json exists
+    if not os.path.exists(config_file_path):
+        logger.info("No legacy config.json found, using defaults")
+        migration_status = "default"
+        # Mark as migrated with default source
+        _write_migration_marker(migration_marker_path, "default")
+        mcp_config["_migration"]["completed"] = True
+        mcp_config["_migration"]["timestamp"] = datetime.now().isoformat()
+        mcp_config["_migration"]["source"] = "default"
+        return mcp_config
+
+    try:
+        # Load legacy config
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            legacy_config = json.load(f)
+
+        logger.info(f"Migrating legacy config from {config_file_path}")
+
+        # Create backup (with timestamp if backup already exists)
+        if os.path.exists(backup_path):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{config_file_path}.backup.{timestamp}"
+
+        try:
+            shutil.copy2(config_file_path, backup_path)
+            logger.info(f"Legacy config backed up to {backup_path}")
+        except Exception as e:
+            logger.warning(f"Failed to create backup: {e}")
+
+        # Map legacy config to new schema
+        # Legacy structure expected: { "search_tools": {...}, "file_watcher": {...}, ... }
+
+        # Migrate search parameters
+        if "search_tools" in legacy_config:
+            search_tools = legacy_config["search_tools"]
+            if isinstance(search_tools, dict):
+                if "case_sensitive" in search_tools:
+                    mcp_config["search"]["case_sensitive"] = search_tools["case_sensitive"]
+                if "context_lines" in search_tools:
+                    mcp_config["search"]["context_lines"] = search_tools.get("context_lines", 0)
+                if "max_line_length" in search_tools:
+                    mcp_config["search"]["max_line_length"] = search_tools.get("max_line_length")
+                if "fuzzy" in search_tools:
+                    mcp_config["search"]["fuzzy"] = search_tools.get("fuzzy", False)
+                if "regex" in search_tools:
+                    mcp_config["search"]["regex"] = search_tools.get("regex")
+
+        # Migrate file watcher configuration
+        if "file_watcher" in legacy_config:
+            fw_config = legacy_config["file_watcher"]
+            if isinstance(fw_config, dict):
+                if "enabled" in fw_config:
+                    mcp_config["file_watcher"]["enabled"] = fw_config["enabled"]
+                if "debounce_seconds" in fw_config:
+                    mcp_config["file_watcher"]["debounce_seconds"] = fw_config.get("debounce_seconds", 6.0)
+
+        # Migrate filter patterns
+        if "exclude_patterns" in legacy_config:
+            exclude_patterns = legacy_config["exclude_patterns"]
+            if isinstance(exclude_patterns, list):
+                mcp_config["filter"]["exclude_patterns"] = exclude_patterns
+
+        if "additional_exclude_patterns" in legacy_config.get("file_watcher", {}):
+            additional = legacy_config["file_watcher"]["additional_exclude_patterns"]
+            if isinstance(additional, list):
+                # Merge with existing exclude patterns
+                existing = set(mcp_config["filter"]["exclude_patterns"])
+                existing.update(additional)
+                mcp_config["filter"]["exclude_patterns"] = list(existing)
+
+        # Mark migration as complete
+        mcp_config["_migration"]["completed"] = True
+        mcp_config["_migration"]["timestamp"] = datetime.now().isoformat()
+        mcp_config["_migration"]["source"] = "legacy"
+
+        # Write migration marker
+        _write_migration_marker(migration_marker_path, "legacy", legacy_config)
+
+        migration_status = "migrated"
+        logger.info(f"Successfully migrated legacy config to MCP Config format")
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in legacy config: {e}")
+        migration_status = "failed"
+        # Mark as migrated with default fallback
+        _write_migration_marker(migration_marker_path, "default_fallback")
+        mcp_config["_migration"]["completed"] = True
+        mcp_config["_migration"]["timestamp"] = datetime.now().isoformat()
+        mcp_config["_migration"]["source"] = "default_fallback"
+
+    except KeyError as e:
+        logger.warning(f"Missing key in legacy config: {e}, using partial migration")
+        migration_status = "partial"
+        # Mark as migrated even with partial data
+        _write_migration_marker(migration_marker_path, "partial")
+        mcp_config["_migration"]["completed"] = True
+        mcp_config["_migration"]["timestamp"] = datetime.now().isoformat()
+        mcp_config["_migration"]["source"] = "partial"
+
+    except Exception as e:
+        logger.error(f"Unexpected error during migration: {e}")
+        migration_status = "failed"
+        # Mark as migrated with default fallback
+        _write_migration_marker(migration_marker_path, "default_fallback")
+        mcp_config["_migration"]["completed"] = True
+        mcp_config["_migration"]["timestamp"] = datetime.now().isoformat()
+        mcp_config["_migration"]["source"] = "default_fallback"
+
+    return mcp_config
+
+
+def _write_migration_marker(marker_path: str, source: str, legacy_config: Dict = None) -> None:
+    """
+    Write migration marker file to prevent re-migration.
+
+    Args:
+        marker_path: Path to the migration marker file
+        source: Migration source (legacy, default, partial, default_fallback)
+        legacy_config: Optional legacy config data for reference
+    """
+    try:
+        os.makedirs(os.path.dirname(marker_path), exist_ok=True)
+        marker_data = {
+            "completed": True,
+            "timestamp": datetime.now().isoformat(),
+            "source": source
+        }
+        if legacy_config and source == "legacy":
+            marker_data["legacy_keys"] = list(legacy_config.keys())
+
+        with open(marker_path, 'w', encoding='utf-8') as f:
+            json.dump(marker_data, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to write migration marker: {e}")
+
+
 class ProjectSettings:
     """Class for managing project settings and index data"""
 
@@ -61,10 +245,14 @@ class ProjectSettings:
             base_path (str): Base path of the project
             skip_load (bool): Whether to skip loading files
         """
+        import copy
         self.base_path = base_path
         self.skip_load = skip_load
         self.available_strategies: list[SearchStrategy] = []
         self.refresh_available_strategies()
+
+        # Initialize in-memory MCP Config (will be populated by migration)
+        self._mcp_config: Dict[str, Any] = copy.deepcopy(DEFAULT_MCP_CONFIG)
 
         # Ensure the base path of the temporary directory exists
         try:
@@ -470,45 +658,80 @@ class ProjectSettings:
 
     def get_file_watcher_config(self) -> dict:
         """
-        Get file watcher specific configuration.
+        Get file watcher specific configuration from MCP Config.
 
         Returns:
             dict: File watcher configuration with defaults
         """
-        config = self.load_config()
-        default_config = {
-            "enabled": True,
-            "debounce_seconds": 6.0,
-            "additional_exclude_patterns": [],
-            "monitored_extensions": [],  # Empty = use all supported extensions
-            "exclude_patterns": [
-                ".git", ".svn", ".hg",
-                "node_modules", "__pycache__", ".venv", "venv",
-                ".DS_Store", "Thumbs.db",
-                "dist", "build", "target", ".idea", ".vscode",
-                ".pytest_cache", ".coverage", ".tox",
-                "bin", "obj"
-            ]
-        }
-
-        # Merge with loaded config
-        file_watcher_config = config.get("file_watcher", {})
-        for key, default_value in default_config.items():
-            if key not in file_watcher_config:
-                file_watcher_config[key] = default_value
-
-        return file_watcher_config
+        # Return from MCP Config
+        return self._mcp_config.get("file_watcher", DEFAULT_MCP_CONFIG["file_watcher"])
 
     def update_file_watcher_config(self, updates: dict) -> None:
         """
-        Update file watcher configuration.
+        Update file watcher configuration in MCP Config.
 
         Args:
             updates: Dictionary of configuration updates
         """
-        config = self.load_config()
-        if "file_watcher" not in config:
-            config["file_watcher"] = self.get_file_watcher_config()
+        if "file_watcher" not in self._mcp_config:
+            self._mcp_config["file_watcher"] = DEFAULT_MCP_CONFIG["file_watcher"].copy()
 
-        config["file_watcher"].update(updates)
-        self.save_config(config)
+        self._mcp_config["file_watcher"].update(updates)
+        logger.info(f"File watcher config updated: {updates}")
+
+    def load_mcp_config(self) -> Dict[str, Any]:
+        """
+        Load MCP Config from in-memory storage.
+
+        Returns:
+            Dict containing the current MCP Config
+        """
+        return self._mcp_config
+
+    def set_mcp_config(self, config: Dict[str, Any]) -> None:
+        """
+        Set MCP Config (typically called by migration function).
+
+        Args:
+            config: Complete MCP Config dictionary
+        """
+        import copy
+        self._mcp_config = copy.deepcopy(config)
+        logger.info("MCP Config updated in memory")
+
+    def get_mcp_config_value(self, key_path: str, default: Any = None) -> Any:
+        """
+        Get a value from MCP Config using dot notation.
+
+        Args:
+            key_path: Dot-separated path (e.g., "search.case_sensitive")
+            default: Default value if key not found
+
+        Returns:
+            Configuration value or default
+        """
+        keys = key_path.split('.')
+        value = self._mcp_config
+        for key in keys:
+            if isinstance(value, dict) and key in value:
+                value = value[key]
+            else:
+                return default
+        return value
+
+    def set_mcp_config_value(self, key_path: str, value: Any) -> None:
+        """
+        Set a value in MCP Config using dot notation.
+
+        Args:
+            key_path: Dot-separated path (e.g., "search.case_sensitive")
+            value: Value to set
+        """
+        keys = key_path.split('.')
+        config = self._mcp_config
+        for key in keys[:-1]:
+            if key not in config:
+                config[key] = {}
+            config = config[key]
+        config[keys[-1]] = value
+        logger.debug(f"MCP Config value set: {key_path} = {value}")

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from .base_service import BaseService
 from ..utils.response_formatter import ResponseFormatter
 from ..constants import SUPPORTED_EXTENSIONS
-from ..indexing import get_index_manager, get_shallow_index_manager
+from ..indexing import get_layered_index_manager
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,8 @@ class ProjectManagementService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        # Deep index manager (legacy full index)
-        self._index_manager = get_index_manager()
-        # Shallow index manager (default for initialization)
-        self._shallow_manager = get_shallow_index_manager()
+        # Unified layered index manager (replaces old managers)
+        self._index_manager = get_layered_index_manager()
         from ..tools.config import ProjectConfigTool
         self._config_tool = ProjectConfigTool()
         # Import FileWatcherTool locally to avoid circular import
@@ -114,8 +112,8 @@ class ProjectManagementService(BaseService):
         # Business step 2: Cleanup existing project state
         self._cleanup_existing_project()
 
-        # Business step 3: Initialize shallow index by default (fast path)
-        index_result = self._initialize_shallow_index_manager(normalized_path)
+        # Business step 3: Initialize layered index manager (shallow by default for fast path)
+        index_result = self._initialize_layered_index_manager(normalized_path)
 
         # Business step 3.1: Store index manager in context for other services
         self.helper.update_index_manager(self._index_manager)
@@ -150,9 +148,9 @@ class ProjectManagementService(BaseService):
             # Clear any existing index state
             pass
 
-    def _initialize_json_index_manager(self, project_path: str) -> Dict[str, Any]:
+    def _initialize_layered_index_manager(self, project_path: str) -> Dict[str, Any]:
         """
-        Business logic to initialize JSON index manager.
+        Business logic to initialize the layered index manager (shallow by default).
 
         Args:
             project_path: Project path
@@ -160,63 +158,24 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with initialization results
         """
-        # Set project path in index manager
+        # Set project path in layered manager
         if not self._index_manager.set_project_path(project_path):
             raise RuntimeError(f"Failed to set project path: {project_path}")
 
         # Update context
         self.helper.update_base_path(project_path)
 
-        # Try to load existing index or build new one
-        if self._index_manager.load_index():
+        # Build or load global shallow index (fast path)
+        file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=False)
+
+        if file_list:
             source = "loaded_existing"
+            file_count = len(file_list) if isinstance(file_list, list) else 0
         else:
-            if not self._index_manager.build_index():
-                raise RuntimeError("Failed to build index")
+            # Force rebuild if loading failed
+            file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=True)
             source = "built_new"
-
-        # Get stats
-        stats = self._index_manager.get_index_stats()
-        file_count = stats.get('indexed_files', 0)
-
-        return {
-            'file_count': file_count,
-            'source': source,
-            'total_symbols': stats.get('total_symbols', 0),
-            'languages': stats.get('languages', [])
-        }
-
-    def _initialize_shallow_index_manager(self, project_path: str) -> Dict[str, Any]:
-        """
-        Business logic to initialize the shallow index manager by default.
-
-        Args:
-            project_path: Project path
-
-        Returns:
-            Dictionary with initialization results
-        """
-        # Set project path in shallow manager
-        if not self._shallow_manager.set_project_path(project_path):
-            raise RuntimeError(f"Failed to set project path (shallow): {project_path}")
-
-        # Update context
-        self.helper.update_base_path(project_path)
-
-        # Try to load existing shallow index or build new one
-        if self._shallow_manager.load_index():
-            source = "loaded_existing"
-        else:
-            if not self._shallow_manager.build_index():
-                raise RuntimeError("Failed to build shallow index")
-            source = "built_new"
-
-        # Determine file count from shallow list
-        try:
-            files = self._shallow_manager.get_file_list()
-            file_count = len(files)
-        except Exception:  # noqa: BLE001 - safe fallback
-            file_count = 0
+            file_count = len(file_list) if isinstance(file_list, list) else 0
 
         return {
             'file_count': file_count,
@@ -283,22 +242,37 @@ class ProjectManagementService(BaseService):
         Returns:
             String describing monitoring setup result
         """
+        # Check if file watcher is enabled in MCP Config
+        from ..services.file_watcher_service import WATCHDOG_AVAILABLE
 
+        file_watcher_config = self.settings.get_file_watcher_config()
+        file_watcher_enabled = file_watcher_config.get('enabled', False)
+
+        if not file_watcher_enabled:
+            logger.info("FileWatcher disabled in config, using on-demand index refresh")
+            return "monitoring_disabled"
+
+        if not WATCHDOG_AVAILABLE:
+            logger.error("FileWatcher enabled but watchdog not installed. Install with: pip install code-index-mcp[watcher]")
+            logger.info("Falling back to on-demand index refresh")
+            return "monitoring_unavailable"
 
         try:
-            # Create rebuild callback that uses the JSON index manager
+            # Create rebuild callback that uses the layered index manager
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
                 try:
                     logger.debug(f"Starting shallow index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild using SHALLOW index manager
+                    # Business logic: File changed, rebuild using layered index manager
                     try:
-                        if not self._shallow_manager.set_project_path(project_path):
-                            logger.warning("Shallow manager set_project_path failed")
+                        if not self._index_manager.set_project_path(project_path):
+                            logger.warning("Index manager set_project_path failed")
                             return False
-                        if self._shallow_manager.build_index():
-                            files = self._shallow_manager.get_file_list()
-                            logger.info(f"File watcher shallow rebuild completed successfully - files {len(files)}")
+
+                        # Rebuild shallow index
+                        file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=True)
+                        if file_list:
+                            logger.info(f"File watcher shallow rebuild completed successfully - files {len(file_list)}")
                             return True
                         else:
                             logger.warning("File watcher shallow rebuild failed")
@@ -315,20 +289,30 @@ class ProjectManagementService(BaseService):
                     return False
 
             # Start monitoring using watcher tool
+            logger.info("FileWatcher enabled - starting file system monitoring")
             success = self._watcher_tool.start_monitoring(project_path, rebuild_callback)
 
             if success:
                 # Store watcher in context for later access
                 self._watcher_tool.store_in_context()
-                # No logging
+                logger.info("FileWatcher started successfully (auto-refresh enabled)")
                 return "monitoring_active"
             else:
                 self._watcher_tool.record_error("Failed to start file monitoring")
+                logger.warning("FileWatcher failed to start, falling back to on-demand refresh")
                 return "monitoring_failed"
 
+        except ImportError as e:
+            error_msg = f"FileWatcher enabled but watchdog not installed: {e}"
+            logger.error(error_msg)
+            logger.info("Install with: pip install code-index-mcp[watcher]")
+            logger.info("Falling back to on-demand index refresh")
+            self._watcher_tool.record_error(error_msg)
+            return "monitoring_unavailable"
         except Exception as e:
             error_msg = f"File monitoring setup failed: {e}"
             self._watcher_tool.record_error(error_msg)
+            logger.warning("FileWatcher setup failed, falling back to on-demand refresh")
             return "monitoring_error"
 
     def _update_project_state(self, project_path: str, file_count: int) -> None:

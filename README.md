@@ -12,6 +12,10 @@ Transform how AI understands your codebase with advanced search, analysis, and n
 
 </div>
 
+---
+
+> **BREAKING CHANGES IN v3.x:** Version 3.x consolidates three search tools (`search_code_advanced`, `find_files`, `get_file_summary`) into a single `unified_search` tool. See [MIGRATION.md](MIGRATION.md) for upgrade guide.
+
 <a href="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp/badge" alt="code-index-mcp MCP server" />
 </a>
@@ -227,9 +231,32 @@ Then configure:
 ### 🔍 **Search & Discovery**
 | Tool | Description |
 |------|-------------|
-| **`search_code_advanced`** | Smart search with regex, fuzzy matching, and file filtering |
-| **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
-| **`get_file_summary`** | Analyze file structure, functions, imports, and complexity (requires deep index) |
+| **`unified_search`** | Single unified interface for all search operations (3 modes: content, files, summary) |
+
+**Search Modes:**
+- **`mode='content'`** - Search code patterns with regex, fuzzy matching, and file filtering
+  - Parameters: `pattern` (required), `case_sensitive`, `context_lines`, `file_pattern`, `fuzzy`, `regex`, `max_line_length`
+  - Returns: Dictionary with search results, file paths, and match details
+- **`mode='files'`** - Locate files using glob patterns (e.g., `*.py`, `test_*.js`)
+  - Parameters: `pattern` (required)
+  - Returns: Dictionary with `files` array and `total_count`
+- **`mode='summary'`** - Analyze file structure, functions, imports, and complexity (requires deep index)
+  - Parameters: `file_path` (required)
+  - Returns: Dictionary with line count, functions, classes, imports, and complexity metrics
+
+**Examples:**
+```python
+# Content search with regex
+unified_search(mode='content', pattern='TODO|FIXME', regex=True, file_pattern='*.py')
+
+# File discovery
+unified_search(mode='files', pattern='**/*.tsx')
+
+# File analysis
+unified_search(mode='summary', file_path='src/main.py')
+```
+
+> **Note for v2.x users:** See [MIGRATION.md](MIGRATION.md) for upgrading from `search_code_advanced`, `find_files`, and `get_file_summary`.
 
 ### 🔄 **Monitoring & Auto-refresh**
 | Tool | Description |
@@ -259,13 +286,13 @@ Set the project path to /Users/dev/my-react-app
 ```
 Find all TypeScript component files in src/components
 ```
-*Uses: `find_files` with pattern `src/components/**/*.tsx`*
+*Uses: `unified_search(mode='files', pattern='src/components/**/*.tsx')`*
 
 **3. Analyze Key Files**
 ```
 Give me a summary of src/api/userService.ts
 ```
-*Uses: `get_file_summary` to show functions, imports, and complexity*
+*Uses: `unified_search(mode='summary', file_path='src/api/userService.ts')`*
 *Tip: run `build_deep_index` first if you get a `needs_deep_index` response.*
 
 ### 🔍 **Advanced Search Examples**
@@ -296,7 +323,7 @@ Find authentication-related functions with fuzzy search for 'authUser'
 ```
 Search for "API_ENDPOINT" only in Python files
 ```
-*Uses: `search_code_advanced` with `file_pattern: "*.py"`*
+*Uses: `unified_search(mode='content', pattern='API_ENDPOINT', file_pattern='*.py')`*
 
 </details>
 

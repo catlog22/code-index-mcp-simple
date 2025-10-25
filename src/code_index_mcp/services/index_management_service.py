@@ -15,7 +15,7 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 from .base_service import BaseService
-from ..indexing import get_index_manager, get_shallow_index_manager, DeepIndexManager
+from ..indexing import get_layered_index_manager
 
 
 @dataclass
@@ -37,12 +37,8 @@ class IndexManagementService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        # Deep manager (symbols/files, legacy JSON index manager)
-        self._index_manager = get_index_manager()
-        # Shallow manager (file-list only) for default workflows
-        self._shallow_manager = get_shallow_index_manager()
-        # Optional wrapper for explicit deep builds
-        self._deep_wrapper = DeepIndexManager()
+        # Unified layered index manager (replaces old managers)
+        self._index_manager = get_layered_index_manager()
 
     def rebuild_index(self) -> str:
         """
@@ -60,15 +56,16 @@ class IndexManagementService(BaseService):
         self._validate_rebuild_request()
 
         # Shallow rebuild only (fast path)
-        if not self._shallow_manager.set_project_path(self.base_path):
-            raise RuntimeError("Failed to set project path (shallow) in index manager")
-        if not self._shallow_manager.build_index():
+        if not self._index_manager.set_project_path(self.base_path):
+            raise RuntimeError("Failed to set project path in index manager")
+
+        # Get or rebuild global shallow index
+        file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=True)
+
+        if not file_list:
             raise RuntimeError("Failed to rebuild shallow index")
 
-        try:
-            count = len(self._shallow_manager.get_file_list())
-        except Exception:
-            count = 0
+        count = len(file_list) if isinstance(file_list, list) else 0
         return f"Shallow index re-built with {count} files."
 
     def get_rebuild_status(self) -> Dict[str, Any]:
@@ -86,19 +83,36 @@ class IndexManagementService(BaseService):
                 'is_rebuilding': False
             }
 
-        # Get index stats from the new JSON system
-        stats = self._index_manager.get_index_stats()
-        
-        return {
-            'status': 'ready' if stats.get('status') == 'loaded' else 'needs_rebuild',
-            'index_available': stats.get('status') == 'loaded',
-            'is_rebuilding': False,
-            'project_path': self.base_path,
-            'file_count': stats.get('indexed_files', 0),
-            'total_symbols': stats.get('total_symbols', 0),
-            'symbol_types': stats.get('symbol_types', {}),
-            'languages': stats.get('languages', [])
-        }
+        # Set project path if not already set
+        if not self._index_manager.project_path:
+            self._index_manager.set_project_path(self.base_path)
+
+        # Get global deep index to check status
+        index = self._index_manager.get_global_index(shallow=False, force_rebuild=False)
+
+        if index:
+            metadata = index.get('metadata', {})
+            return {
+                'status': 'ready',
+                'index_available': True,
+                'is_rebuilding': False,
+                'project_path': self.base_path,
+                'file_count': metadata.get('indexed_files', 0),
+                'total_symbols': metadata.get('total_symbols', 0),
+                'symbol_types': {},  # Not available in new metadata
+                'languages': metadata.get('languages', [])
+            }
+        else:
+            return {
+                'status': 'needs_rebuild',
+                'index_available': False,
+                'is_rebuilding': False,
+                'project_path': self.base_path,
+                'file_count': 0,
+                'total_symbols': 0,
+                'symbol_types': {},
+                'languages': []
+            }
 
     def _validate_rebuild_request(self) -> None:
         """
@@ -123,13 +137,17 @@ class IndexManagementService(BaseService):
         if not self._index_manager.set_project_path(self.base_path):
             raise RuntimeError("Failed to set project path in index manager")
 
-        # Rebuild the index
-        if not self._index_manager.refresh_index():
+        # Rebuild the deep index
+        if not self._index_manager.refresh_index(target_path=None, shallow=False):
             raise RuntimeError("Failed to rebuild index")
 
         # Get stats for result
-        stats = self._index_manager.get_index_stats()
-        file_count = stats.get('indexed_files', 0)
+        index = self._index_manager.get_global_index(shallow=False, force_rebuild=False)
+        if index:
+            metadata = index.get('metadata', {})
+            file_count = metadata.get('indexed_files', 0)
+        else:
+            file_count = 0
 
         rebuild_time = time.time() - start_time
 
@@ -167,25 +185,16 @@ class IndexManagementService(BaseService):
         self._require_project_setup()
 
         # Initialize manager with current base path
-        if not self._shallow_manager.set_project_path(self.base_path):
+        if not self._index_manager.set_project_path(self.base_path):
             raise RuntimeError("Failed to set project path in index manager")
 
         # Build shallow index
-        if not self._shallow_manager.build_index():
+        file_list = self._index_manager.get_global_index(shallow=True, force_rebuild=True)
+
+        if not file_list:
             raise RuntimeError("Failed to build shallow index")
 
-        # Try to report count
-        count = 0
-        try:
-            shallow_path = getattr(self._shallow_manager, 'index_path', None)
-            if shallow_path and os.path.exists(shallow_path):
-                with open(shallow_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        count = len(data)
-        except Exception as e:  # noqa: BLE001 - safe fallback to zero
-            logger.debug(f"Unable to read shallow index count: {e}")
-
+        count = len(file_list) if isinstance(file_list, list) else 0
         return f"Shallow index built{f' with {count} files' if count else ''}."
 
     def rebuild_deep_index(self) -> str:
