@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "code-index-mcp"
-version = "2.4.1"
-description = "Code indexing and analysis tools for LLMs using MCP"
+name = "code-index-mcp-simple"
+version = "3.0.0"
+description = "Code indexing and analysis tools for LLMs using MCP (Simple Fork)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "johnhuang316"}
+    {name = "catlog22"}
 ]
 dependencies = [
     "mcp>=0.3.0",
@@ -27,10 +27,12 @@ dependencies = [
 watcher = ["watchdog>=3.0.0"]
 
 [project.urls]
-Homepage = "https://github.com/johnhuang316/code-index-mcp"
-"Bug Tracker" = "https://github.com/johnhuang316/code-index-mcp/issues"
+Homepage = "https://github.com/catlog22/code-index-mcp-simple"
+"Bug Tracker" = "https://github.com/catlog22/code-index-mcp-simple/issues"
+"Original Project" = "https://github.com/johnhuang316/code-index-mcp"
 
 [project.scripts]
+code-index-mcp-simple = "code_index_mcp.server:main"
 code-index-mcp = "code_index_mcp.server:main"
 
 [tool.setuptools]
